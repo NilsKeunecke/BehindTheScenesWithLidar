@@ -20,9 +20,9 @@ from datasets.kitti_raw.kitti_raw_dataset import KittiRawDataset
 from models.common.model.scheduler import make_scheduler
 from models.common.render import NeRFRenderer
 from models.bts.model.image_processor import make_image_processor, RGBProcessor
-from models.bts.model.loss import ReconstructionLoss, compute_errors_l1ssim
+from models.bts.model.loss import ReconstructionLoss, DepthAwareLoss, compute_errors_l1ssim
 from models.bts.model.models_bts import BTSNet
-from models.bts.model.ray_sampler import ImageRaySampler, PatchRaySampler, RandomRaySampler
+from models.bts.model.ray_sampler import ImageRaySampler, PatchRaySampler, RandomRaySampler, LidarRaySampler
 from utils.base_trainer import base_training
 from utils.metrics import MeanMetric
 from utils.plotting import color_tensor
@@ -67,6 +67,8 @@ class BTSWrapper(nn.Module):
             self.train_sampler = PatchRaySampler(self.ray_batch_size, self.z_near, self.z_far, self.patch_size, channels=self.train_image_processor.channels)
         elif self.sample_mode == "image":
             self.train_sampler = ImageRaySampler(self.z_near, self.z_far, channels=self.train_image_processor.channels)
+        elif self.sample_mode == "lidar":
+            self.train_sampler = LidarRaySampler(self.ray_batch_size, self.z_near, self.z_far)
         else:
             raise NotImplementedError
 
@@ -87,6 +89,7 @@ class BTSWrapper(nn.Module):
 
     def forward(self, data):
         data = dict(data)
+        merged_scan = torch.Tensor(data["merged_scan"])              # n, 1, number of points in pcd
         images = torch.stack(data["imgs"], dim=1)                           # n, v, c, h, w
         poses = torch.stack(data["poses"], dim=1)                           # n, v, 4, 4 w2c
         projs = torch.stack(data["projs"], dim=1)                           # n, v, 4, 4 (-1, 1)
@@ -212,7 +215,10 @@ class BTSWrapper(nn.Module):
         sampler = self.train_sampler if self.training else self.val_sampler
 
         with profiler.record_function("trainer_sample-rays"):
-            all_rays, all_rgb_gt = sampler.sample(images_ip[:, ids_loss] , poses[:, ids_loss], projs[:, ids_loss])
+            if type(sampler) == LidarRaySampler:
+                all_rays, all_rgb_gt = sampler.sample(merged_scan)
+            else:
+                all_rays, all_rgb_gt = sampler.sample(images_ip[:, ids_loss] , poses[:, ids_loss], projs[:, ids_loss])
 
         data["fine"] = []
         data["coarse"] = []
@@ -393,7 +399,8 @@ def get_dataflow(config, logger=None):
 
 
 def get_metrics(config, device):
-    names = ["abs_rel", "sq_rel", "rmse", "rmse_log", "a1", "a2", "a3"]
+    # names = ["abs_rel", "sq_rel", "rmse", "rmse_log", "a1", "a2", "a3"]
+    names = [] # TODO replace
     if config.get("mode", "depth") == "nvs":
         names += ["ssim", "psnr", "lpips"]
 
@@ -422,7 +429,8 @@ def initialize(config: dict, logger=None):
 
     lr_scheduler = make_scheduler(config.get("scheduler", {}), optimizer)
 
-    criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+    # criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+    criterion = DepthAwareLoss() ### Lidar Loss
 
     return model, optimizer, criterion, lr_scheduler
 

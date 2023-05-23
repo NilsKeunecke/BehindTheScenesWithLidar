@@ -12,6 +12,38 @@ class RaySampler:
         raise NotImplementedError
 
 
+class LidarRaySampler(RaySampler):
+    def __init__(self, ray_batch_size, z_near, z_far):
+        self.ray_batch_size = ray_batch_size
+        self.z_near = z_near
+        self.z_far = z_far
+
+    def sample(self, merged_scan):
+
+        depth_gt = []
+        rays = []
+
+        for n_ in range(merged_scan.shape[0]):
+            pix_inds = torch.randint(0, merged_scan.shape[-1], (self.ray_batch_size,)) #Fix
+            points = merged_scan[n_, pix_inds]
+            cam_fars = torch.zeros(self.ray_batch_size)
+            cam_fars[:] = self.z_far
+            cam_nears = torch.zeros(self.ray_batch_size)
+            cam_nears[:] = self.z_near
+            direction_vecs = points[:, :3] - points[:, 3:6]
+            depth = torch.norm(direction_vecs, dim=1)
+            direction_vecs = torch.divide(direction_vecs.T, depth).T
+            depth_gt.append(depth)
+            rays.append(torch.cat((points[:, :3], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
+
+        all_depth_gt = torch.stack(depth_gt)
+        all_rays = torch.stack(rays)
+
+        return all_rays, all_depth_gt
+    
+    def reconstruct(self, render_dict):
+        return render_dict
+
 class RandomRaySampler(RaySampler):
     def __init__(self, ray_batch_size, z_near, z_far, channels=3):
         self.ray_batch_size = ray_batch_size
@@ -101,7 +133,7 @@ class RandomRaySampler(RaySampler):
 
         render_dict["coarse"] = coarse
         render_dict["fine"] = fine
-        render_dict["rgb_gt"] = rgb_gt.view(n, n_pts, channels)
+        render_dict["rgb_gt"] = rgb_gt.view(n, n_pts, self.channels)
 
         return render_dict
 
@@ -216,7 +248,7 @@ class PatchRaySampler(RaySampler):
 
         render_dict["coarse"] = coarse
         render_dict["fine"] = fine
-        render_dict["rgb_gt"] = rgb_gt.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, channels)
+        render_dict["rgb_gt"] = rgb_gt.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, self.channels)
 
         return render_dict
 
@@ -316,6 +348,6 @@ class ImageRaySampler(RaySampler):
 
         if "rgb_gt" in render_dict:
             rgb_gt = render_dict["rgb_gt"]
-            render_dict["rgb_gt"] = rgb_gt.view(n, v_in, self.height, self.width, channels)
+            render_dict["rgb_gt"] = rgb_gt.view(n, v_in, self.height, self.width, self.channels)
 
         return render_dict

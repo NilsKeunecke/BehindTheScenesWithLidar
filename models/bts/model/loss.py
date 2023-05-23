@@ -1,4 +1,5 @@
 import math
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -40,6 +41,37 @@ def edge_aware_smoothness(gt_img, depth, mask=None):
     return errors
 
 
+class DepthAwareLoss:
+    def __init__(self) -> None:
+        pass
+
+    @staticmethod
+    def get_loss_metric_names():
+        return ["loss", "loss_rgb_coarse", "loss_rgb_fine", "loss_ray_entropy", "loss_depth_reg"]
+
+    def __call__(self, data) -> Any:
+        with profiler.record_function("loss_computation"):
+            loss_dict = {}
+            
+            loss = 0
+            gt_depth = data["rgb_gt"]
+            computed_depth = data["coarse"][0]["depth"]
+            item_loss = torch.abs(gt_depth-computed_depth)
+            item_loss = torch.sum(item_loss) / gt_depth.shape[-1]
+            loss += item_loss
+
+            loss_dict["loss_rgb_coarse"] = -1
+            loss_dict["loss_rgb_fine"] = -1
+            loss_dict["loss_ray_entropy"] = -1
+            loss_dict["loss_depth_reg"] = -1
+            loss_dict["loss_alpha_reg"] = -1
+            loss_dict["loss_eas"] = -1
+            loss_dict["loss_depth_smoothness"] = -1
+            loss_dict["loss_invalid_ratio"] = -1
+            loss_dict["loss"] = loss.item()
+
+            return loss, loss_dict
+        
 class ReconstructionLoss:
     def __init__(self, config, use_automasking=False) -> None:
         super().__init__()

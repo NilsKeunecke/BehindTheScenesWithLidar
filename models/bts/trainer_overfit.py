@@ -14,7 +14,7 @@ from torchvision.utils import make_grid
 from datasets.data_util import make_datasets
 from models.common.model.scheduler import make_scheduler
 from models.common.render import NeRFRenderer
-from models.bts.model.loss import ReconstructionLoss
+from models.bts.model.loss import ReconstructionLoss, DepthAwareLoss
 from models.bts.trainer import get_metrics, BTSWrapper, BTSNet
 from utils.array_operations import map_fn, unsqueezer, to
 from utils.base_trainer import base_training
@@ -40,14 +40,14 @@ class DataloaderDummy(DataLoader):
                  batch_sampler: Union[Sampler[Sequence], Iterable[Sequence], None] = None, num_workers: int = 0,
                  collate_fn: Optional[_collate_fn_t] = None, pin_memory: bool = False, drop_last: bool = False,
                  timeout: float = 0, worker_init_fn: Optional[_worker_init_fn_t] = None, multiprocessing_context=None,
-                 generator=None, *, prefetch_factor: int = 2, persistent_workers: bool = False,
+                 generator=None, *, prefetch_factor=None, persistent_workers: bool = False, # prefatchfactor was 2
                  pin_memory_device: str = ""):
         super().__init__(dataset, batch_size, shuffle, sampler, batch_sampler, num_workers, collate_fn, pin_memory,
                          drop_last, timeout, worker_init_fn, multiprocessing_context, generator,
                          prefetch_factor=prefetch_factor, persistent_workers=persistent_workers,
                          pin_memory_device=pin_memory_device)
 
-        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cuda:0")
+        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cpu") # Changes was: cuda:0
 
     def _get_iterator(self):
         return iter([self.element])
@@ -63,7 +63,7 @@ class BTSWrapperOverfit(BTSWrapper):
     def __init__(self, renderer, config, eval_nvs=False, size=None) -> None:
         super().__init__(renderer, config, eval_nvs)
 
-        self.encoder_dummy = EncoderDummy(size, config["encoder"]["d_out"], num_views=3)
+        self.encoder_dummy = EncoderDummy(size, config["encoder"]["d_out"], num_views=1) # Changes was: 3
 
         self.renderer.net.encoder = self.encoder_dummy
         self.renderer.net.flip_augmentation = False
@@ -125,7 +125,8 @@ def initialize(config: dict, logger=None):
 
     lr_scheduler = make_scheduler(config.get("scheduler", {}), optimizer)
 
-    criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+    # criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+    criterion = DepthAwareLoss() ### Lidar Loss
 
     return model, optimizer, criterion, lr_scheduler
 

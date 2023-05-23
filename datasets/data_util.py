@@ -5,6 +5,7 @@ from datasets.kitti_odom.kitti_odometry_dataset import KittiOdometryDataset
 from datasets.kitti_raw.kitti_raw_dataset import KittiRawDataset
 from datasets.nyu_depth_v2.nyu_depth_v2_dataset import NYUDepthV2Dataset
 from datasets.realestate10k.realestate10k_dataset import RealEstate10kDataset
+from datasets.kitti_semantic.kitti_semantic_dataset import KittiSemanticDataset
 from datasets.waymo.waymo_dataset import WaymoDataset
 
 
@@ -160,6 +161,47 @@ def make_datasets(config):
         )
         return train_dataset, test_dataset
 
+    elif type == "KITTI_semantic":
+        train_dataset = KittiSemanticDataset(
+            data_path = config["data_path"],
+            train = True,
+            target_image_size=tuple(config.get("image_size", (192, 640))),
+            # data_path=config["data_path"],
+            # pose_path=config["pose_path"],
+            # split_path=train_split_path,
+            # target_image_size=tuple(config.get("image_size", (192, 640))),
+            # frame_count=config.get("data_fc", 3),
+            # return_stereo=config.get("data_stereo", True),
+            # return_fisheye=config.get("data_fisheye", True),
+            # return_3d_bboxes=config.get("data_3d_bboxes", False),
+            # return_segmentation=config.get("data_segmentation", False),
+            # keyframe_offset=config.get("keyframe_offset", 0),
+            # dilation=config.get("dilation", 1),
+            # fisheye_rotation=config.get("fisheye_rotation", 0),
+            # fisheye_offset=config.get("fisheye_offset", 1),
+            # color_aug=config.get("color_aug", False),
+            # is_preprocessed=config.get("is_preprocessed", False)
+        )
+        test_dataset = KittiSemanticDataset(
+            data_path=config["data_path"],
+            train = True,
+            target_image_size=tuple(config.get("image_size", (192, 640))),
+            # pose_path=config["pose_path"],
+            # split_path=test_split_path,
+            # target_image_size=tuple(config.get("image_size", (192, 640))),
+            # frame_count=config.get("data_fc", 3),
+            # return_stereo=config.get("data_stereo", True),
+            # return_fisheye=config.get("data_fisheye", True),
+            # return_3d_bboxes=config.get("data_3d_bboxes", False),
+            # return_segmentation=config.get("data_segmentation", False),
+            # keyframe_offset=config.get("keyframe_offset", 0),
+            # fisheye_rotation=config.get("fisheye_rotation", 0),
+            # fisheye_offset=config.get("fisheye_offset", 1),
+            # dilation=config.get("dilation", 1),
+            # is_preprocessed=config.get("is_preprocessed", False)
+        )
+        return train_dataset, test_dataset
+    
     else:
         raise NotImplementedError(f"Unsupported dataset type: {type}")
 
