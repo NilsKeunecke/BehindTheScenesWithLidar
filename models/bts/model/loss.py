@@ -4,6 +4,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 from torch import profiler
+import logging
 
 from models.common.model.layers import ssim
 
@@ -53,12 +54,11 @@ class DepthAwareLoss:
         with profiler.record_function("loss_computation"):
             loss_dict = {}
             
-            loss = 0
             gt_depth = data["rgb_gt"]
             computed_depth = data["coarse"][0]["depth"]
             item_loss = torch.abs(gt_depth-computed_depth)
             item_loss = torch.sum(item_loss) / gt_depth.shape[-1]
-            loss += item_loss
+            loss = item_loss
 
             loss_dict["loss_rgb_coarse"] = -1
             loss_dict["loss_rgb_fine"] = -1
@@ -69,6 +69,7 @@ class DepthAwareLoss:
             loss_dict["loss_depth_smoothness"] = -1
             loss_dict["loss_invalid_ratio"] = -1
             loss_dict["loss"] = loss.item()
+            logging.info(f"loss: {round(loss.item(), 3)}, d_comp: {computed_depth[0:1000:5000]}, d_gt: {gt_depth[0:1000:5000]}")
 
             return loss, loss_dict
         

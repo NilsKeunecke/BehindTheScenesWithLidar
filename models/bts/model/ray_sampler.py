@@ -24,7 +24,7 @@ class LidarRaySampler(RaySampler):
         rays = []
 
         for n_ in range(merged_scan.shape[0]):
-            pix_inds = torch.randint(0, merged_scan.shape[-1], (self.ray_batch_size,)) #Fix
+            pix_inds = torch.randperm(merged_scan.shape[1])[:self.ray_batch_size]
             points = merged_scan[n_, pix_inds]
             cam_fars = torch.zeros(self.ray_batch_size)
             cam_fars[:] = self.z_far

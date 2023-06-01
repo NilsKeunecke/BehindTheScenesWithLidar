@@ -116,40 +116,39 @@ class KittiSemanticDataset(Dataset):
             # Assemble the K camera projection matrix
             K = P_rect_20[:3, :3]
 
-            # r_orig = im_size[0] / im_size[1]
-            # r_target = self.target_image_size[0] / self.target_image_size[1]
+            r_orig = im_size[0] / im_size[1]
+            r_target = self.target_image_size[0] / self.target_image_size[1]
 
-            # if r_orig >= r_target:
-            #     new_height = r_target * im_size[1]
-            #     crop_height = im_size[0] - ((im_size[0] - new_height) // 2) * 2
-            #     box = ((im_size[0] - new_height) // 2, 0, crop_height, int(im_size[1]))
+            if r_orig >= r_target:
+                new_height = r_target * im_size[1]
+                crop_height = im_size[0] - ((im_size[0] - new_height) // 2) * 2
+                box = ((im_size[0] - new_height) // 2, 0, crop_height, int(im_size[1]))
 
-            #     c_x = K[0, 2] / im_size[1]
-            #     c_y = (K[1, 2] - (im_size[0] - new_height) / 2) / new_height
+                c_x = K[0, 2] / im_size[1]
+                c_y = (K[1, 2] - (im_size[0] - new_height) / 2) / new_height
 
-            #     rescale = im_size[1] / self.target_image_size[1]
+                rescale = im_size[1] / self.target_image_size[1]
 
-            # else:
-            #     new_width = im_size[0] / r_target
-            #     crop_width = im_size[1] - ((im_size[1] - new_width) // 2) * 2
-            #     box = (0, (im_size[1] - new_width) // 2, im_size[0], crop_width)
+            else:
+                new_width = im_size[0] / r_target
+                crop_width = im_size[1] - ((im_size[1] - new_width) // 2) * 2
+                box = (0, (im_size[1] - new_width) // 2, im_size[0], crop_width)
 
-            #     c_x = (K[0, 2] - (im_size[1] - new_width) / 2) / new_width
-            #     c_y = K[1, 2] / im_size[0]
+                c_x = (K[0, 2] - (im_size[1] - new_width) / 2) / new_width
+                c_y = K[1, 2] / im_size[0]
 
-            #     rescale = im_size[0] / self.target_image_size[0]
+                rescale = im_size[0] / self.target_image_size[0]
 
-            # print(K, rescale)
-            # f_x = K[0, 0] / self.target_image_size[1] / rescale
-            # f_y = K[1, 1] / self.target_image_size[0] / rescale
+            f_x = K[0, 0] / self.target_image_size[1] / rescale
+            f_y = K[1, 1] / self.target_image_size[0] / rescale
 
-            # box = tuple([int(x) for x in box])
+            box = tuple([int(x) for x in box])
 
-            # # Replace old K with new K
-            # K[0, 0] = f_x * 2.
-            # K[1, 1] = f_y * 2.
-            # K[0, 2] = c_x * 2 - 1
-            # K[1, 2] = c_y * 2 - 1
+            # Replace old K with new K
+            K[0, 0] = f_x * 2.
+            K[1, 1] = f_y * 2.
+            K[0, 2] = c_x * 2 - 1
+            K[1, 2] = c_y * 2 - 1
 
             calib_list.append({
                 "K": K,
