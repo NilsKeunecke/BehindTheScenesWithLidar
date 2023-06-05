@@ -417,7 +417,10 @@ class MetricLoggingHandler(BaseHandler):
             # Plot losses
             loss_dict = engine.state.output["loss_dict"]
             for k, v in loss_dict.items():
-                writer.add_scalar(f"loss-{self.tag}/{k}", v, global_step)
+                if k not in ["computed_depth", "gt_depth"]:
+                    writer.add_scalar(f"loss-{self.tag}/{k}", v, global_step)
+                else: 
+                    writer.add_histogram(f"loss-{self.tag}/{k}", v, global_step)
 
         if self.log_metrics:
             # Plot metrics

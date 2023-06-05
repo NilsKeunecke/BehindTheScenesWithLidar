@@ -1,5 +1,5 @@
 type: "KITTI_semantic"
-data_path: "/Users/nilskeunecke/semantic-kitti_partly"
+data_path: "/storage/slurm/keunecke/semantickitti/"
 # pose_path: "data/KITTI-360/data_poses"
 # split_path: "datasets/kitti_360/splits/seg"
 image_size: [ 192, 640 ]

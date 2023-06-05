@@ -13,10 +13,20 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
         for pose_idx in tqdm(range(len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
+
+            # Assemble current scan for the final merged scan
+            current_scan = data.load_pointcloud(seq_idx, pose_idx)
+            current_scan_formatted = np.zeros([current_scan.shape[0], 5])
+            current_scan_formatted[:, :3] = current_scan[:, :3]
+            current_scan_formatted[:, 3] = pose_idx
+            current_scan_formatted[:, 4] = data.labels[seq_idx][pose_idx]
+
             if visualize:
                 imgs = data.load_image_pair(seq_idx, pose_idx)
                 left_img, right_img = imgs[0], imgs[1]
-            for next_scan_idx in range(1, foresight_range+1): # Check the next scans
+
+            # Iterate over the next scans (default=50)
+            for next_scan_idx in range(1, foresight_range+1):
                 target_scan, target_label, target_pose = data.load_pointcloud(seq_idx, pose_idx+next_scan_idx), data.labels[seq_idx][pose_idx+next_scan_idx], data.poses[seq_idx][pose_idx+next_scan_idx]
                 
                 # Lidar to world
@@ -37,10 +47,10 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 
                 if ignore_moving:
                     val_inds = val_inds & (target_label < 250)
-                target_scan_data_point = np.zeros([target_scan[val_inds].shape[0], 7])
+                target_scan_data_point = np.zeros([target_scan[val_inds].shape[0], 5])
                 target_scan_data_point[:, :3] = target_scan[val_inds, :3]
-                target_scan_data_point[:, 3:6] = target_pose[:3, 3]
-                target_scan_data_point[:, 6] = target_label[val_inds]
+                target_scan_data_point[:, 3] = pose_idx + next_scan_idx
+                target_scan_data_point[:, 4] = target_label[val_inds]
                 point_list.append(target_scan_data_point)
 
                 # Visualize scan projection
@@ -59,13 +69,19 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
             ms_path = os.path.join(data.base_path, f"merged_scans/{seq}/{pose_idx:06d}.npz")
             if os.path.isfile(ms_path):
                 os.remove(ms_path)
-            merged_scan = np.concatenate(point_list, axis=0, dtype=np.float16)
-            np.savez_compressed(ms_path, merged_scan)
+            merged_scan = np.concatenate(point_list, axis=0)
+            merged_scan = np.concatenate([merged_scan, current_scan_formatted], axis=0)
+
+            # Subsample the merged scan to save memory
+            indices = np.arange(0, merged_scan.shape[0])
+            np.random.shuffle(indices)
+            merged_scan = merged_scan[indices[:2048*100]] # Arbitrary to downsize merged_scans
+            np.savez_compressed(ms_path, merged_scan.astype(np.float16))
     print(f"Total time {int(time() - t_start)} sec")
 
 
 if __name__ == "__main__":
-    path = "/Users/nilskeunecke/semantic-kitti_partly"
+    path = "/storage/slurm/keunecke/semantickitti"
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))

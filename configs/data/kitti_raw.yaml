@@ -1,6 +1,6 @@
 type: "KITTI_Raw"
-data_path: "data/KITTI-Raw"
-pose_path: "datasets/kitti_raw/orb-slam_poses"
+data_path: "/storage/group/dataset_mirrors/kitti_odom_grey/"
+pose_path: "/storage/group/dataset_mirrors/kitti_odom_grey/"
 split_path: "datasets/kitti_raw/splits/eigen_zhou"
 image_size: [ 192, 640 ]
 data_stereo: true

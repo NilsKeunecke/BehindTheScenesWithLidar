@@ -217,20 +217,20 @@ class BTSWrapper(nn.Module):
         with profiler.record_function("trainer_sample-rays"):
             if type(sampler) == LidarRaySampler:
                 all_rays, all_rgb_gt = sampler.sample(merged_scan)
-                import cv2
-                import numpy as np
-                img_test = np.array(np.transpose(images[0, 0].numpy(), axes=[1, 2, 0]).astype(np.int16))
-                img_test = np.zeros(shape=(192,640,3), dtype=np.int16)
-                for ray in all_rays[0, :]:
-                    point_3d = np.ones(4)
-                    point_3d[:3] = ray[:3].numpy()
-                    projected_to_cam = poses[0, 0].numpy().dot(point_3d)[:3]
-                    pixel = projs[0, 0].numpy().dot(projected_to_cam)
-                    norm_pixel = (pixel / pixel[2]).astype(int)[:2]
-                    print(norm_pixel)
-                    cv2.circle(img_test, norm_pixel, 5, (0, 255, 0), 5)
-                cv2.imshow("testimage", img_test)
-                cv2.waitKey(0)
+                # import cv2
+                # import numpy as np
+                # img_test = np.array(np.transpose(images[0, 0].numpy(), axes=[1, 2, 0]).astype(np.int16))
+                # img_test = np.zeros(shape=(192,640,3), dtype=np.int16)
+                # for ray in all_rays[0, :]:
+                #     point_3d = np.ones(4)
+                #     point_3d[:3] = ray[:3].numpy()
+                #     projected_to_cam = poses[0, 0].numpy().dot(point_3d)[:3]
+                #     pixel = projs[0, 0].numpy().dot(projected_to_cam)
+                #     norm_pixel = (pixel / pixel[2]).astype(int)[:2]
+                #     print(norm_pixel)
+                #     cv2.circle(img_test, norm_pixel, 5, (0, 255, 0), 5)
+                # cv2.imshow("testimage", img_test)
+                # cv2.waitKey(0)
             else:
                 all_rays, all_rgb_gt = sampler.sample(images_ip[:, ids_loss] , poses[:, ids_loss], projs[:, ids_loss])
 

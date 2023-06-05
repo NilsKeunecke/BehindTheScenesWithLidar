@@ -47,7 +47,7 @@ class DataloaderDummy(DataLoader):
                          prefetch_factor=prefetch_factor, persistent_workers=persistent_workers,
                          pin_memory_device=pin_memory_device)
 
-        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cpu") # Changes was: cuda:0
+        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cuda:0") # Changes was: cuda:0
 
     def _get_iterator(self):
         return iter([self.element])

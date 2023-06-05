@@ -4,7 +4,7 @@ defaults:
     - _self_
 
 name: "kitti_360"
-model: "bts"
+model: "bts_overfit"
 output_path: "out/kitti_360"
 
 num_epochs: 25

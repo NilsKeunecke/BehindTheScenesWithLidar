@@ -7,8 +7,8 @@ name: "kitti_semantic"
 model: "bts_overfit"
 output_path: "out/kitti_semantic"
 
-num_epochs: 100 # was 50
-batch_size: 2 # was 16
+num_epochs: 50000 # was 50
+batch_size: 16
 
 # save_best:
 #     metric: abs_rel
