@@ -31,14 +31,14 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 scan_pts_im1[:, :2] = scan_pts_im1[:, :2] / scan_pts_im1[:, 2][..., None]
 
                 # check if in bounds of either image
-                val_inds = ((scan_pts_im0[:, 0] >= 0) & (scan_pts_im0[:, 1] >= 0)) | ((scan_pts_im1[:, 0] >= 0) & (scan_pts_im1[:, 1] >= 0))
-                val_inds = val_inds & (((scan_pts_im0[:, 0] < data.target_image_size[1]) & (scan_pts_im0[:, 1] < data.target_image_size[0])) | ((scan_pts_im1[:, 0] < data.target_image_size[1]) & (scan_pts_im1[:, 1] < data.target_image_size[0])))
+                val_inds = ((scan_pts_im0[:, 0] >= -1) & (scan_pts_im0[:, 1] >= -1)) | ((scan_pts_im1[:, 0] >= -1) & (scan_pts_im1[:, 1] >= -1))
+                val_inds = val_inds & (((scan_pts_im0[:, 0] < 1) & (scan_pts_im0[:, 1] < 1)) | ((scan_pts_im1[:, 0] < 1) & (scan_pts_im1[:, 1] < 1)))
                 val_inds = val_inds & ((scan_pts_im0[:, 2] > 0) | (scan_pts_im1[:, 2] > 0))
                 
                 if ignore_moving:
                     val_inds = val_inds & (target_label < 250)
                 target_scan_data_point = np.zeros([target_scan[val_inds].shape[0], 7])
-                target_scan_data_point[:, :3] = target_scan[val_inds, :3]
+                target_scan_data_point[:, :3] = world_points[val_inds, :3]
                 target_scan_data_point[:, 3:6] = target_pose[:3, 3]
                 target_scan_data_point[:, 6] = target_label[val_inds]
                 point_list.append(target_scan_data_point)
@@ -47,9 +47,13 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 if visualize:
                     pcd = o3d.geometry.PointCloud()
                     v3d = o3d.utility.Vector3dVector
-                    pcd.points = v3d(target_scan[val_inds, :3])
+                    pcd.points = v3d(world_points[val_inds, :3])
                     pcd.colors = v3d(np.array([data.color_map[x] for x in np.array(target_label)[val_inds]]))
-                    cv2.imshow("Projected LiDAR Scan", np.vstack([left_img, right_img]))
+                    left_img_points = np.copy(left_img)
+                    for point, color in zip(scan_pts_im0[val_inds, :2], target_label[val_inds]):
+                        color = data.label_to_color(color)
+                        cv2.circle(left_img_points, (int(point[0] * data.target_image_size[1] + data.target_image_size[1]/2), int(point[1] * data.target_image_size[0] + data.target_image_size[0]/2)), 1, color, 1)
+                    cv2.imshow("Projected LiDAR Scan", np.vstack([left_img_points, right_img]))
                     cv2.waitKey(0)
                     o3d.visualization.draw_geometries([pcd])
 
@@ -70,5 +74,5 @@ if __name__ == "__main__":
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
     print("Load success")
-    preprocess_dataset(train_data, visualize=False)
+    preprocess_dataset(train_data, visualize=True)
 
