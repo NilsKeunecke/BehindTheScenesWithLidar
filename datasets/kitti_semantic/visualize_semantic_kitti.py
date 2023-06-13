@@ -10,13 +10,14 @@ def visualize_scans(data) -> None:
     for seq_idx, seq in enumerate(data.sequences):
         pcd_list = []
         for pose_idx in tqdm(range(1)):
+            pose_idx += 50
             scan, label, pose = data.load_pointcloud(seq_idx, pose_idx), data.labels[seq_idx][pose_idx], data.poses[seq_idx][pose_idx]
             scan = data[pose_idx]["merged_scan"]
             label = scan[:, 6]
             scan = scan[:, :4]
             lidar_points = deepcopy(scan)
             lidar_points[:, 3] = 1.0
-            world_points = pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T
+            world_points = lidar_points #pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T
             pcd = o3d.geometry.PointCloud()
             v3d = o3d.utility.Vector3dVector
             val_inds = label >= 0
@@ -26,10 +27,11 @@ def visualize_scans(data) -> None:
             pcd_list.append(pcd)
 
         # Visualize Points in cv2
-        imgs = data.load_image_pair(seq_idx, 0)
+        imgs = data.load_image_pair(seq_idx, 50)
         normalized_cam, right_img = imgs[0], imgs[1]
         normal_cam = deepcopy(normalized_cam)
         for idx, pcd in enumerate(pcd_list):
+            idx += 50
             points = np.ones([np.array(pcd.points).shape[0], 4])
             points[:, :3] = np.array(pcd.points)
             colors = np.array(pcd.colors)
