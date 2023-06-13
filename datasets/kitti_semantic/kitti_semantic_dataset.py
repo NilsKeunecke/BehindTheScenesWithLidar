@@ -39,7 +39,7 @@ BASE_SIZES = {
 }
 
 class KittiSemanticDataset(Dataset):
-    def __init__(self, data_path: str, train: bool, target_image_size=(256, 512)) -> None:
+    def __init__(self, data_path: str, train: bool, target_image_size=(370, 1226)) -> None:
         self.base_path = data_path
         self.target_image_size = target_image_size
         self.train = train
@@ -199,8 +199,8 @@ class KittiSemanticDataset(Dataset):
 
     def load_image_pair(self, seq, idx) -> np.ndarray[Any, Any]:
         slurm_path = "/storage/group/dataset_mirrors/kitti_odom_grey/sequences/"
-        img2 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"{self.sequences[seq]}/image_0/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-        img3 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"{self.sequences[seq]}/image_1/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img2 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_2/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img3 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_3/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
         return [img2, img3]
     
     def preprocess_image(self, img: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:

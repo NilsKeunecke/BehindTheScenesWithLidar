@@ -26,7 +26,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 left_img, right_img = imgs[0], imgs[1]
 
             # Iterate over the next scans (default=50)
-            for next_scan_idx in range(1, foresight_range+1):
+            for next_scan_idx in range(0, foresight_range+1):
                 target_scan, target_label, target_pose = data.load_pointcloud(seq_idx, pose_idx+next_scan_idx), data.labels[seq_idx][pose_idx+next_scan_idx], data.poses[seq_idx][pose_idx+next_scan_idx]
                 
                 # Lidar to world
@@ -35,8 +35,8 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 world_points = target_pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T
 
                 # World to cameras
-                scan_pts_im0 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(pose.dot(world_points.T))[:3, :]).T
-                scan_pts_im1 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam1"].dot(pose.dot(world_points.T))[:3, :]).T
+                scan_pts_im0 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T
+                scan_pts_im1 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam1"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T
                 scan_pts_im0[:, :2] = scan_pts_im0[:, :2] / scan_pts_im0[:, 2][..., None]
                 scan_pts_im1[:, :2] = scan_pts_im1[:, :2] / scan_pts_im1[:, 2][..., None]
 
@@ -55,6 +55,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
                 # Visualize scan projection
                 if visualize:
+                    print("Info ", pose_idx, pose_idx+next_scan_idx, pose, target_pose)
                     pcd = o3d.geometry.PointCloud()
                     v3d = o3d.utility.Vector3dVector
                     pcd.points = v3d(world_points[val_inds, :3])
@@ -62,10 +63,12 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                     left_img_points = np.copy(left_img)
                     for point, color in zip(scan_pts_im0[val_inds, :2], target_label[val_inds]):
                         color = data.label_to_color(color)
-                        cv2.circle(left_img_points, (int(point[0] * data.target_image_size[1] + data.target_image_size[1]/2), int(point[1] * data.target_image_size[0] + data.target_image_size[0]/2)), 1, color, 1)
+                        color.reverse()
+                        cv2.circle(left_img_points, (int((point[0] *.5 + 0.5) * data.target_image_size[1]), int((point[1] *.5 + 0.5) * data.target_image_size[0])), 1, color, 1)
                     cv2.imshow("Projected LiDAR Scan", np.vstack([left_img_points, right_img]))
                     cv2.waitKey(0)
                     o3d.visualization.draw_geometries([pcd])
+                    exit()
 
             # Save all points in new pcd
             if not os.path.isdir(os.path.join(data.base_path, f"merged_scans/{seq}")):
@@ -85,10 +88,10 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
 
 if __name__ == "__main__":
-    path = "/storage/slurm/keunecke/semantickitti"
+    path = "/Users/nilskeunecke/semantic-kitti_partly"
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
     print("Load success")
-    preprocess_dataset(train_data, visualize=False)
+    preprocess_dataset(train_data, visualize=False, ignore_moving=True)
 

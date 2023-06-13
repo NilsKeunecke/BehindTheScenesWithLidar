@@ -1,81 +1,82 @@
 from __future__ import annotations
-from typing import Any
 import open3d as o3d
 import numpy as np
+from copy import deepcopy
 from tqdm import tqdm
-import struct
-import os
-import yaml
+from kitti_semantic_dataset import KittiSemanticDataset
 import cv2
 
-def read_pose(path: str, idx: int) -> np.ndarray[Any, float]:
-    pose = np.eye(4)
-    cam2body = np.zeros_like(pose)
-    cam2body = np.array([[0,0,1,0],[1,0,0,0], [0,1,0,0], [0,0,0,1]])
-    with open(path, "rb") as f:
-        pose[:3, :] = np.fromstring(f.readlines()[idx], dtype=float, sep=' ').reshape([3, 4])
-    # pose = cam2body.T.dot(pose)
-    # pose_data = np.loadtxt(path)
-    # poses_seq = pose_data[:, 1:].astype(np.float32).reshape((-1, 3, 4))
-    # poses_seq = np.concatenate((poses_seq, np.zeros_like(poses_seq[:, :1, :])), axis=1)
-    # poses_seq[:, 3, 3] = 1
-    # print(poses_seq, pose)
-    # exit()
-    return pose
+def visualize_scans(data) -> None:
+    for seq_idx, seq in enumerate(data.sequences):
+        pcd_list = []
+        for pose_idx in tqdm(range(1)):
+            scan, label, pose = data.load_pointcloud(seq_idx, pose_idx), data.labels[seq_idx][pose_idx], data.poses[seq_idx][pose_idx]
+            scan = data[pose_idx]["merged_scan"]
+            label = scan[:, 6]
+            scan = scan[:, :4]
+            lidar_points = deepcopy(scan)
+            lidar_points[:, 3] = 1.0
+            world_points = pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T
+            pcd = o3d.geometry.PointCloud()
+            v3d = o3d.utility.Vector3dVector
+            val_inds = label >= 0
+            val_inds = val_inds #& (label < 250)
+            pcd.points = v3d(world_points[val_inds, :3])
+            pcd.colors = v3d(np.array([data.color_map[x] for x in np.array(label)[val_inds]]))
+            pcd_list.append(pcd)
+
+        # Visualize Points in cv2
+        imgs = data.load_image_pair(seq_idx, 0)
+        normalized_cam, right_img = imgs[0], imgs[1]
+        normal_cam = deepcopy(normalized_cam)
+        for idx, pcd in enumerate(pcd_list):
+            points = np.ones([np.array(pcd.points).shape[0], 4])
+            points[:, :3] = np.array(pcd.points)
+            colors = np.array(pcd.colors)
+            new_K = np.array([[707.0912,   0.,     601.8873],
+                                [  0.,     707.0912, 183.1104],
+                                [  0.,       0.,       1.    ]])
+            normal_points = new_K.dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(data.poses[seq_idx][idx]).dot(points.T))[:3, :]).T
+            normalized_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(data.poses[seq_idx][idx]).dot(points.T))[:3, :]).T
+
+            normal_points[:, :2] = normal_points[:, :2] / normal_points[:, 2][..., None]
+            normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
+
+            normalized_val_inds = (normalized_points[:, 0] >= -1) & (normalized_points[:, 1] >= -1)
+            normalized_val_inds = normalized_val_inds & ((normalized_points[:, 0] < 1) & (normalized_points[:, 1] < 1))
+            normalized_val_inds = normalized_val_inds & (normalized_points[:, 2] > 0)
+
+            normal_val_inds = (normal_points[:, 0] >= 0) & (normal_points[:, 1] >= 0)
+            normal_val_inds = normal_val_inds & ((normal_points[:, 0] < data.target_image_size[1]) & (normal_points[:, 1] < data.target_image_size[0]))
+            normal_val_inds = normal_val_inds & (normal_points[:, 2] > 0)
+
+            print(np.sum(normal_val_inds.astype(np.float32) - normalized_val_inds.astype(np.float32)))
+
+            for normalized_point, color in zip(normalized_points[normalized_val_inds, :2], colors[normalized_val_inds]):
+                bgr_color = np.array([color[2], color[1], color[0]])
+                cv2.circle(normalized_cam, (int((normalized_point[0] *.5 + 0.5) * data.target_image_size[1]), int((normalized_point[1] *.5 + 0.5) * data.target_image_size[0])), 1, bgr_color, 1)
+            
+            for normal_point, color in zip(normal_points[normal_val_inds, :2], colors[normal_val_inds]):
+                bgr_color = np.array([color[2], color[1], color[0]])
+                cv2.circle(normal_cam, (int(normal_point[0]), int(normal_point[1])), 1, bgr_color, 1)
+            
+            cv2.imshow("Projected LiDAR Scan", np.vstack([normalized_cam, normal_cam]))
+            cv2.waitKey(0)
 
 
-def label_to_color(label_path: str, color_map_path: str) -> np.ndarray[Any, Any]:
-    label_list = []
-    with open (label_path, "rb") as f:
-        byte = f.read(4)
-        while byte:
-            label, _ = struct.unpack("hh", byte)
-            label_list.append(label)
-            byte = f.read(4)
-    color_map = yaml.safe_load(open(color_map_path, 'r'))["color_map"]
-    return [color_map[label] for label in label_list]
-
-def visualize_data_point(lidar_path: str, color_list: list[tuple], pose: np.ndarray[Any, float]) -> None:
-    size_float = 4
-    pcd_list = []
-    label_list = []
-    with open (lidar_path, "rb") as f:
-        byte = f.read(size_float*4)
-        while byte:
-            x,y,z,intensity = struct.unpack("ffff", byte)
-            pcd_list.append([x, y, z])
-            byte = f.read(size_float*4)
- 
-    points = [pose[:3, :3].dot(np.array(point)) for point in pcd_list]
-    points += pose[:3, 3]
-    points = np.array(points)
-    pcd = o3d.geometry.PointCloud()
-    v3d = o3d.utility.Vector3dVector
-    pcd.points = v3d(points)
-    pcd.colors = v3d(color_list)
-    return pcd
-
+        # Visualize Pcd in Open3d
+        vis = o3d.visualization.Visualizer()
+        vis.create_window()
+        opt = vis.get_render_option()
+        opt.background_color = np.asarray([0, 0, 0])
+        for pcd in pcd_list:
+            vis.add_geometry(pcd)
+        vis.run()
 
 if __name__ == "__main__":
-    sequence = "00"
-    base_path = "/Volumes/External/dataset/sequences/"
-    pose_path =  os.path.join("/Volumes/External/dataset/poses_dvso/00.txt")
-    semantic_kitti_yaml_path = "/Users/nilskeunecke/BehindTheScenes/datasets/kitti_semantic/semantic-kitti.yaml"
-    pcd_list=[]
+    path = "/Users/nilskeunecke/semantic-kitti_partly"
 
-    for scan in tqdm(range(10)):
-        lidar_path = os.path.join(base_path,  f"{sequence}/velodyne/{scan:06d}.bin")
-        label_path = os.path.join(base_path, f"{sequence}/labels/{scan:06d}.label")
-        pose = read_pose(path=pose_path, idx=scan)
-        print(pose)
-        color_list = label_to_color(label_path=label_path, color_map_path=semantic_kitti_yaml_path)
-
-        pcd_list.append(visualize_data_point(lidar_path=lidar_path, color_list=color_list, pose=pose))
-
-        #load Image
-        img2 = cv2.imread(os.path.join(base_path, f"{sequence}/image_2/{scan:06d}.png"))
-        img3 = cv2.imread(os.path.join(base_path, f"{sequence}/image_3/{scan:06d}.png"))
-        joint_img = np.vstack([img2, img3])
-        cv2.imshow("Current camera frames", joint_img)
-        o3d.visualization.draw_geometries(pcd_list)
+    # Preprocess Train data
+    train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
+    visualize_scans(train_data)
 
