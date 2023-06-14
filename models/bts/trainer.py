@@ -99,7 +99,7 @@ class BTSWrapper(nn.Module):
 
         # Use first frame as keyframe
         to_base_pose = torch.inverse(poses[:, :1, :, :])
-        poses = to_base_pose.expand(-1, v, -1, -1) @ poses
+        # poses = to_base_pose.expand(-1, v, -1, -1) @ poses # Excluded because we don't have keyframe in Lidar
 
         if self.training and self.alternating_ratio is not None:
             step = self._counter % (self.alternating_ratio + 1)

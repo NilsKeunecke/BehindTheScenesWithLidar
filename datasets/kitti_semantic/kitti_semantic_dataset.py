@@ -250,7 +250,7 @@ class KittiSemanticDataset(Dataset):
         merged_scan = np.zeros([merged_scan_compressed.shape[0], 7])
         indices = merged_scan_compressed[:, 3].astype(int)
         merged_scan[:, :3] = merged_scan_compressed[:, :3]
-        merged_scan[:, 3:6] = np.array([self.poses[0][i][3, :3] for i in indices])
+        merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[3, :3] for i in indices])
         merged_scan[:, 6] = merged_scan_compressed[:, 4]
 
         _proc_time = np.array(time.time() - _start_time)
