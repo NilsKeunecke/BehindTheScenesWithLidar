@@ -14,13 +14,6 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
 
-            # Assemble current scan for the final merged scan
-            current_scan = data.load_pointcloud(seq_idx, pose_idx)
-            current_scan_formatted = np.zeros([current_scan.shape[0], 5])
-            current_scan_formatted[:, :3] = current_scan[:, :3]
-            current_scan_formatted[:, 3] = pose_idx
-            current_scan_formatted[:, 4] = data.labels[seq_idx][pose_idx]
-
             if visualize:
                 imgs = data.load_image_pair(seq_idx, pose_idx)
                 left_img, right_img = imgs[0], imgs[1]
@@ -45,7 +38,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 val_inds = val_inds & (((scan_pts_im0[:, 0] < 1) & (scan_pts_im0[:, 1] < 1)) | ((scan_pts_im1[:, 0] < 1) & (scan_pts_im1[:, 1] < 1)))
                 val_inds = val_inds & ((scan_pts_im0[:, 2] > 0) | (scan_pts_im1[:, 2] > 0))
                 
-                if ignore_moving:
+                if ignore_moving and next_scan_idx != 0:
                     val_inds = val_inds & (target_label < 250)
                 target_scan_data_point = np.zeros([target_scan[val_inds].shape[0], 5])
                 target_scan_data_point[:, :3] = world_points[val_inds, :3]
@@ -77,7 +70,6 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
             if os.path.isfile(ms_path):
                 os.remove(ms_path)
             merged_scan = np.concatenate(point_list, axis=0)
-            merged_scan = np.concatenate([merged_scan, current_scan_formatted], axis=0)
 
             # Subsample the merged scan to save memory
             indices = np.arange(0, merged_scan.shape[0])
