@@ -25,7 +25,9 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 # Lidar to world
                 lidar_points = deepcopy(target_scan)
                 lidar_points[:, 3] = 1.0
-                world_points = target_pose.dot(np.linalg.inv(data.calib[seq_idx]["T_w_lidar"])).dot(lidar_points.T).T
+                # world_points = target_pose.dot(np.linalg.inv(data.calib[seq_idx]["T_w_lidar"])).dot(lidar_points.T).T
+                world_points = target_pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T # Should be wrong but works
+
 
                 # World to cameras
                 scan_pts_im0 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T

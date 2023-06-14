@@ -9,7 +9,7 @@ import cv2
 def visualize_scans(data) -> None:
     for seq_idx, seq in enumerate(data.sequences):
         pcd_list = []
-        modifier = 150
+        modifier = 0
         for pose_idx in tqdm(range(1)):
             pose_idx += modifier
             scan = data[pose_idx]["merged_scan"]
