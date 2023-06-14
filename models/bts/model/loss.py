@@ -71,7 +71,7 @@ class DepthAwareLoss:
             loss_dict["computed_depth"] = computed_depth
             loss_dict["gt_depth"] = gt_depth
             loss_dict["loss"] = loss.item()
-            logging.info(f"loss: {round(loss.item(), 3)}, d_comp: {computed_depth[0:1000:5000]}, d_gt: {gt_depth[0:1000:5000]}")
+            # logging.info(f"loss: {round(loss.item(), 3)}, d_comp: {computed_depth[0:1000:5000]}, d_gt: {gt_depth[0:1000:5000]}")
 
             return loss, loss_dict
         
