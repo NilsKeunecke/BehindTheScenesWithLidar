@@ -15,9 +15,8 @@ def visualize_scans(data) -> None:
             scan = data[pose_idx]["merged_scan"]
             label = scan[:, 6]
             scan = scan[:, :4]
-            lidar_points = deepcopy(scan)
-            lidar_points[:, 3] = 1.0
-            world_points = lidar_points #pose.dot(data.calib[seq_idx]["T_w_lidar"]).dot(lidar_points.T).T
+            world_points = deepcopy(scan)
+            world_points[:, 3] = 1.0
             pcd = o3d.geometry.PointCloud()
             v3d = o3d.utility.Vector3dVector
             val_inds = label >= 0
