@@ -13,6 +13,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
         for pose_idx in tqdm(range(len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
+            points_in_first_scan = 0
 
             if visualize:
                 imgs = data.load_image_pair(seq_idx, pose_idx)
@@ -46,6 +47,9 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 target_scan_data_point[:, :3] = world_points[val_inds, :3]
                 target_scan_data_point[:, 3] = pose_idx + next_scan_idx
                 target_scan_data_point[:, 4] = target_label[val_inds]
+                
+                if points_in_first_scan == 0:
+                    points_in_first_scan = target_scan_data_point.shape[0]
                 point_list.append(target_scan_data_point)
 
                 # Visualize scan projection
@@ -74,15 +78,19 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
             merged_scan = np.concatenate(point_list, axis=0)
 
             # Subsample the merged scan to save memory
-            indices = np.arange(0, merged_scan.shape[0])
+            first_scan_indices = np.arange(0, points_in_first_scan)
+            indices = np.arange(points_in_first_scan, merged_scan.shape[0])
             np.random.shuffle(indices)
-            merged_scan = merged_scan[indices[:2048*100]] # Arbitrary to downsize merged_scans
+            indices = first_scan_indices # np.concatenate([first_scan_indices, indices])
+            merged_scan = merged_scan[indices] # Arbitrary to downsize merged_scans
             np.savez_compressed(ms_path, merged_scan.astype(np.float16))
     print(f"Total time {int(time() - t_start)} sec")
 
 
 if __name__ == "__main__":
-    path = "/Users/nilskeunecke/semantic-kitti_partly"
+    # path = "/Users/nilskeunecke/semantic-kitti_partly"
+    path = "/storage/slurm/keunecke/semantickitti/"
+
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))

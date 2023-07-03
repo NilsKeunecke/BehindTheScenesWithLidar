@@ -1,5 +1,7 @@
 import math
-from copy import copy
+import cv2
+import numpy as np
+from copy import copy, deepcopy
 from typing import Optional, Union, Iterable, Sequence
 
 import ignite.distributed as idist
@@ -158,6 +160,33 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
 
     recon_imgs = recon_imgs.view(nv, h, w, -1, c)
     recon_imgs = recon_imgs[take]
+
+    #Construct projection
+    projections_images = deepcopy(images)
+    for idx in range(len(projections_images)):
+        points = data["merged_scan"].detach()[0][:, :4]
+        points[:, 3] = 1.0
+        normalized_points = torch.matmul(data["projs"][idx].detach()[0], torch.matmul(data["poses"][idx].detach()[0], points.T)[:3, :]).T
+        normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
+        direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["merged_scan"].detach()[0][:, 3:6]
+        # true_direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][idx].detach()[0][:3, 3]
+        depth = torch.norm(direction_vecs, dim=1)
+        depth = (depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
+        invalid = 0
+        from matplotlib import cm
+        viridis = cm.get_cmap('inferno', 255)
+        for point, dv in zip(normalized_points, depth): 
+            dv = dv.cpu().numpy()
+            bgr_color = torch.Tensor(viridis(dv)[:3])
+            width = int((point[0] *.5 + 0.5) * projections_images[idx].shape[2])
+            height = int((point[1] *.5 + 0.5) * projections_images[idx].shape[1])
+            if 0 <= width < projections_images[idx].shape[2] and 0 <= height < projections_images[idx].shape[1]:
+                projections_images[idx][:, height, width] = bgr_color
+            else:
+                invalid += 1
+        print("Invalid projections: ", invalid)
+
+
     # Aggregate recon_imgs by taking the mean
     recon_imgs = recon_imgs.mean(dim=-2).permute(0, 3, 1, 2)
 
@@ -190,6 +219,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     nrow = int(len(take) ** .5)
 
     images_grid = make_grid(images, nrow=nrow)
+    projections_grid = make_grid(projections_images, nrow=nrow)
     recon_imgs_grid = make_grid(recon_imgs, nrow=nrow)
     recon_depths_grid = [make_grid(d, nrow=nrow) for d in recon_depths]
     depth_profile_grid = make_grid(depth_profile, nrow=nrow)
@@ -199,6 +229,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     invalids_grid = make_grid(invalids, nrow=nrow)
 
     writer.add_image(f"{tag}/input_im", images_grid.cpu(), global_step=step)
+    writer.add_image(f"{tag}/projections", projections_grid.cpu(), global_step=step)
     writer.add_image(f"{tag}/recon_im", recon_imgs_grid.cpu(), global_step=step)
     for i, d in enumerate(recon_depths_grid):
         writer.add_image(f"{tag}/recon_depth_{i}", d.cpu(), global_step=step)
