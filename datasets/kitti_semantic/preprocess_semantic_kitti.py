@@ -2,6 +2,7 @@ import numpy as np
 from tqdm  import tqdm
 import os
 import cv2
+from scipy import stats
 from copy import deepcopy
 from time import time
 import open3d as o3d
@@ -31,14 +32,14 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
                 # World to cameras
                 scan_pts_im0 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T
-                scan_pts_im1 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam1"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T
+                # scan_pts_im1 = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam1"].dot(np.linalg.inv(pose).dot(world_points.T))[:3, :]).T
                 scan_pts_im0[:, :2] = scan_pts_im0[:, :2] / scan_pts_im0[:, 2][..., None]
-                scan_pts_im1[:, :2] = scan_pts_im1[:, :2] / scan_pts_im1[:, 2][..., None]
+                # scan_pts_im1[:, :2] = scan_pts_im1[:, :2] / scan_pts_im1[:, 2][..., None]
 
                 # check if in bounds of either image
-                val_inds = ((scan_pts_im0[:, 0] >= -1) & (scan_pts_im0[:, 1] >= -1)) | ((scan_pts_im1[:, 0] >= -1) & (scan_pts_im1[:, 1] >= -1))
-                val_inds = val_inds & (((scan_pts_im0[:, 0] < 1) & (scan_pts_im0[:, 1] < 1)) | ((scan_pts_im1[:, 0] < 1) & (scan_pts_im1[:, 1] < 1)))
-                val_inds = val_inds & ((scan_pts_im0[:, 2] > 0) | (scan_pts_im1[:, 2] > 0))
+                val_inds = ((scan_pts_im0[:, 0] >= -1) & (scan_pts_im0[:, 1] >= -1)) & ((scan_pts_im0[:, 0] < 1) & (scan_pts_im0[:, 1] < 1))
+                # val_inds = val_inds | (((scan_pts_im1[:, 0] >= -1) & (scan_pts_im1[:, 1] >= -1)) & ((scan_pts_im1[:, 0] < 1) & (scan_pts_im1[:, 1] < 1)))
+                val_inds = val_inds & ((scan_pts_im0[:, 2] > 0)) # | (scan_pts_im1[:, 2] > 0))
                 
                 if ignore_moving and next_scan_idx != 0:
                     val_inds = val_inds & (target_label < 250)
@@ -73,11 +74,61 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 os.remove(ms_path)
             merged_scan = np.concatenate(point_list, axis=0)
 
-            # Subsample the merged scan to save memory
-            indices = np.arange(0, merged_scan.shape[0])
-            np.random.shuffle(indices)
-            merged_scan = merged_scan[indices[:2048*100]] # Arbitrary to downsize merged_scans
-            np.savez_compressed(ms_path, merged_scan.astype(np.float16))
+            compression_strategy = "patches"
+            print("Subsampling..")
+            if compression_strategy == "subsample":
+                # Subsample the merged scan to save memory
+                indices = np.arange(0, merged_scan.shape[0])
+                np.random.shuffle(indices)
+                merged_scan = merged_scan[indices[:2048*100]] # Arbitrary to downsize merged_scans
+                np.savez_compressed(ms_path, merged_scan.astype(np.float16))
+            elif compression_strategy == "patches":
+                max_points_per_bin = 64
+                sampling = "random"
+                
+                sampled_merged_scan = merged_scan[:2]
+                points = deepcopy(merged_scan)
+                points[:, 3] = 1.0
+                projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
+                projected_points[:, :2] = projected_points[:, :2] / projected_points[:, 2][..., None]
+                binx = np.arange(-1, 1, 2/128)
+                biny = np.arange(-1, 1, 2/40)
+                statistics = stats.binned_statistic_2d(projected_points[:, 0], projected_points[:, 1], None, 'count', bins=[binx, biny])
+                for idx in range(129*41):
+                    vals = statistics.binnumber == idx
+                    num_vals = np.sum(vals)
+                    if num_vals == 0:
+                        continue
+                    elif num_vals <= max_points_per_bin:
+                        sampled_merged_scan = np.concatenate((sampled_merged_scan, merged_scan[vals]), axis=0)
+                    elif num_vals > max_points_per_bin:
+                        if sampling == "random":
+                            candidates = merged_scan[vals]
+                            indices = np.arange(0, candidates.shape[0])
+                            np.random.shuffle(indices)
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
+                        else:
+                            raise NotImplementedError("Please select a valid sampling method!")
+                np.savez_compressed(ms_path, sampled_merged_scan.astype(np.float16))
+                # points = deepcopy(sampled_merged_scan)
+                # points[:, 3] = 1.0
+                # projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
+                # projected_points[:, :2] = projected_points[:, :2] / projected_points[:, 2][..., None]
+                # binx = np.arange(-1, 1, 2/128)
+                # biny = np.arange(-1, 1, 2/40)
+                # statistics = stats.binned_statistic_2d(projected_points[:, 0], projected_points[:, 1], None, 'count', bins=[binx, biny])
+                # occurences = np.bincount(statistics.binnumber)
+                # from matplotlib import pyplot as plt
+                # fig = plt.figure()
+                # plt.title("Number of Lidar points projected into the camera image after sampling. (128x40 bins)")
+                # occurences = (occurences).reshape([129, 41])[1:, 1:]
+                # img = plt.imshow(occurences.T, cmap='viridis')
+                # fig.colorbar(img)
+                # plt.show()
+                # print(statistics)
+
+                    
+
     print(f"Total time {int(time() - t_start)} sec")
 
 
