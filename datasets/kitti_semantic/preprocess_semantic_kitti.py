@@ -11,7 +11,7 @@ from kitti_semantic_dataset import KittiSemanticDataset
 def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, ignore_moving: bool = True, foresight_range: int = 50) -> None:
     t_start = time()
     for seq_idx, seq in tqdm(enumerate(data.sequences)): # For each sequence
-        for pose_idx in tqdm(range(len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
+        for pose_idx in tqdm(range(10, len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
 
@@ -20,7 +20,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 left_img, right_img = imgs[0], imgs[1]
 
             # Iterate over the next scans (default=50)
-            for next_scan_idx in range(0, foresight_range+1):
+            for next_scan_idx in range(foresight_range+1):
                 target_scan, target_label, target_pose = data.load_pointcloud(seq_idx, pose_idx+next_scan_idx), data.labels[seq_idx][pose_idx+next_scan_idx], data.poses[seq_idx][pose_idx+next_scan_idx]
                 
                 # Lidar to world
@@ -147,5 +147,5 @@ if __name__ == "__main__":
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
     print("Load success")
-    preprocess_dataset(train_data, visualize=False, ignore_moving=True)
+    preprocess_dataset(train_data, visualize=True, ignore_moving=True)
 

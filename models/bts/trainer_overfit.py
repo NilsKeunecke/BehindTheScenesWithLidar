@@ -1,5 +1,7 @@
 import math
-from copy import copy
+import cv2
+import numpy as np
+from copy import copy, deepcopy
 from typing import Optional, Union, Iterable, Sequence
 
 import ignite.distributed as idist
@@ -141,6 +143,18 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     recon_imgs = data["fine"][0]["rgb"].detach()[0]
     recon_depths = [f["depth"].detach()[0] for f in data["fine"]]
 
+    #Construct projection
+    projections_images = deepcopy(images)
+    for idx in range(len(projections_images)):
+        points = data["merged_scan"][:, :4]
+        points[:, 3] = 1.0
+        label = data["merged_scan"][:, 6]
+        normalized_points = data["projs"][idx].dot(data["poses"][idx].dot(points.T)[:3, :]).T
+        colors = np.array([data.color_map[x] for x in np.array(label)])
+        for point, color in zip(normalized_points, colors): 
+            bgr_color = np.array([color[2], color[1], color[0]])
+            cv2.circle(projections_images[idx], (int((point[0] *.5 + 0.5) * projections_images[idx].shape[1]), int((point[1] *.5 + 0.5) * projections_images[idx].shape[0])), 1, bgr_color, 1)
+
     depth_profile = data["coarse"][0]["alphas"].detach()[0]
     alphas = data["coarse"][0]["alphas"].detach()[0]
     invalids = data["coarse"][0]["invalid"].detach()[0]
@@ -190,6 +204,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     nrow = int(len(take) ** .5)
 
     images_grid = make_grid(images, nrow=nrow)
+    projections_grid = make_grid(projections_images, nrow=nrow)
     recon_imgs_grid = make_grid(recon_imgs, nrow=nrow)
     recon_depths_grid = [make_grid(d, nrow=nrow) for d in recon_depths]
     depth_profile_grid = make_grid(depth_profile, nrow=nrow)
@@ -199,6 +214,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     invalids_grid = make_grid(invalids, nrow=nrow)
 
     writer.add_image(f"{tag}/input_im", images_grid.cpu(), global_step=step)
+    writer.add_image(f"{tag}/projections", projections_grid.cpu(), global_step=step)
     writer.add_image(f"{tag}/recon_im", recon_imgs_grid.cpu(), global_step=step)
     for i, d in enumerate(recon_depths_grid):
         writer.add_image(f"{tag}/recon_depth_{i}", d.cpu(), global_step=step)
