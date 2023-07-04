@@ -11,7 +11,7 @@ from kitti_semantic_dataset import KittiSemanticDataset
 def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, ignore_moving: bool = True, foresight_range: int = 50) -> None:
     t_start = time()
     for seq_idx, seq in tqdm(enumerate(data.sequences)): # For each sequence
-        for pose_idx in tqdm(range(10, len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
+        for pose_idx in tqdm(range(0, len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
             points_in_first_scan = 0
@@ -41,6 +41,9 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 val_inds = ((scan_pts_im0[:, 0] >= -1) & (scan_pts_im0[:, 1] >= -1)) & ((scan_pts_im0[:, 0] < 1) & (scan_pts_im0[:, 1] < 1))
                 # val_inds = val_inds | (((scan_pts_im1[:, 0] >= -1) & (scan_pts_im1[:, 1] >= -1)) & ((scan_pts_im1[:, 0] < 1) & (scan_pts_im1[:, 1] < 1)))
                 val_inds = val_inds & ((scan_pts_im0[:, 2] > 0)) # | (scan_pts_im1[:, 2] > 0))
+
+                # check if points are close enough to the camera pose 
+                val_inds = val_inds & (np.linalg.norm(world_points[:, :3] - pose[:3, 3], axis=-1) <= 100)
                 
                 if ignore_moving and next_scan_idx != 0:
                     val_inds = val_inds & (target_label < 250)
@@ -78,7 +81,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 os.remove(ms_path)
             merged_scan = np.concatenate(point_list, axis=0)
 
-            compression_strategy = "subsample"
+            compression_strategy = "patches"
             print("Subsampling..")
             if compression_strategy == "subsample":
                 # Subsample the merged scan to save memory
@@ -88,13 +91,14 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 np.savez_compressed(ms_path, merged_scan.astype(np.float16))
             elif compression_strategy == "patches":
                 max_points_per_bin = 64
-                sampling = "closest"
+                sampling = "random_weighted_by_distance"
                 
                 sampled_merged_scan = merged_scan[:2]
                 points = deepcopy(merged_scan)
                 points[:, 3] = 1.0
                 projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
                 projected_points[:, :2] = projected_points[:, :2] / projected_points[:, 2][..., None]
+                assert (projected_points[:, :2].max() < 1) & (projected_points[:, :2].min() > -1)
                 binx = np.arange(-1, 1, 2/128)
                 biny = np.arange(-1, 1, 2/40)
                 statistics = stats.binned_statistic_2d(projected_points[:, 0], projected_points[:, 1], None, 'count', bins=[binx, biny])
@@ -146,12 +150,10 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
 
 if __name__ == "__main__":
-    # path = "/Users/nilskeunecke/semantic-kitti_partly"
-    path = "/storage/slurm/keunecke/semantickitti/"
-
+    path = "/Users/nilskeunecke/semantic-kitti_partly"
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
     print("Load success")
-    preprocess_dataset(train_data, visualize=True, ignore_moving=True)
+    preprocess_dataset(train_data, visualize=False, ignore_moving=True)
 

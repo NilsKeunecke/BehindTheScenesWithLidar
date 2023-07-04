@@ -176,7 +176,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     #Construct projection
     projections_images = deepcopy(images)
     for idx in range(len(projections_images)):
-        points = data["merged_scan"].detach()[0][:, :4]
+        points = data["merged_scan"].detach()[0][:, 3:7]
         points[:, 3] = 1.0
         normalized_points = torch.matmul(data["projs"][idx].detach()[0], torch.matmul(data["poses"][idx].detach()[0], points.T)[:3, :]).T
         normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]

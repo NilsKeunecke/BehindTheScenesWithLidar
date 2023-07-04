@@ -35,7 +35,7 @@ class LidarRaySampler(RaySampler):
             depth = torch.norm(direction_vecs, dim=1)
             direction_vecs = torch.divide(direction_vecs.T, depth).T
             depth_gt.append(depth)
-            rays.append(torch.cat((points[:, :3], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
+            rays.append(torch.cat((points[:, 3:6], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
 
         all_depth_gt = torch.stack(depth_gt)
         all_rays = torch.stack(rays)
