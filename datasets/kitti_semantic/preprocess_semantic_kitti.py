@@ -84,7 +84,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 np.savez_compressed(ms_path, merged_scan.astype(np.float16))
             elif compression_strategy == "patches":
                 max_points_per_bin = 64
-                sampling = "random"
+                sampling = "closest"
                 
                 sampled_merged_scan = merged_scan[:2]
                 points = deepcopy(merged_scan)
@@ -102,11 +102,20 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                     elif num_vals <= max_points_per_bin:
                         sampled_merged_scan = np.concatenate((sampled_merged_scan, merged_scan[vals]), axis=0)
                     elif num_vals > max_points_per_bin:
+                        candidates = merged_scan[vals]
                         if sampling == "random":
-                            candidates = merged_scan[vals]
                             indices = np.arange(0, candidates.shape[0])
                             np.random.shuffle(indices)
-                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan,                              [indices[:max_points_per_bin]]), axis=0)
+                        elif sampling == "closest":
+                            dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-pose[:3, 3],  candidates[:, :3]-pose[:3, 3]))
+                            indices = np.argsort(dist, axis=-1)[:max_points_per_bin]
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices]), axis=0)
+                        elif sampling == "random_weighted_by_distance":
+                            indices = np.arange(0, candidates.shape[0])
+                            dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-pose[:3, 3],  candidates[:, :3]-pose[:3, 3]))
+                            probs = dist / np.sum(dist)
+                            np.random.choice(indices, max_points_per_bin, replace=False, p=probs)
                         else:
                             raise NotImplementedError("Please select a valid sampling method!")
                 np.savez_compressed(ms_path, sampled_merged_scan.astype(np.float16))
