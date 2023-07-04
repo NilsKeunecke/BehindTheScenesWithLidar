@@ -14,6 +14,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
         for pose_idx in tqdm(range(10, len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
             pose = data.poses[seq_idx][pose_idx]
             point_list = []
+            points_in_first_scan = 0
 
             if visualize:
                 imgs = data.load_image_pair(seq_idx, pose_idx)
@@ -47,6 +48,9 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 target_scan_data_point[:, :3] = world_points[val_inds, :3]
                 target_scan_data_point[:, 3] = pose_idx + next_scan_idx
                 target_scan_data_point[:, 4] = target_label[val_inds]
+                
+                if points_in_first_scan == 0:
+                    points_in_first_scan = target_scan_data_point.shape[0]
                 point_list.append(target_scan_data_point)
 
                 # Visualize scan projection
@@ -74,13 +78,13 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 os.remove(ms_path)
             merged_scan = np.concatenate(point_list, axis=0)
 
-            compression_strategy = "patches"
+            compression_strategy = "subsample"
             print("Subsampling..")
             if compression_strategy == "subsample":
                 # Subsample the merged scan to save memory
                 indices = np.arange(0, merged_scan.shape[0])
-                np.random.shuffle(indices)
-                merged_scan = merged_scan[indices[:2048*100]] # Arbitrary to downsize merged_scans
+                # np.random.shuffle(indices)
+                merged_scan = merged_scan[indices[:points_in_first_scan]] # 2048*100]] # Arbitrary to downsize merged_scans
                 np.savez_compressed(ms_path, merged_scan.astype(np.float16))
             elif compression_strategy == "patches":
                 max_points_per_bin = 64
@@ -142,7 +146,9 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
 
 if __name__ == "__main__":
-    path = "/Users/nilskeunecke/semantic-kitti_partly"
+    # path = "/Users/nilskeunecke/semantic-kitti_partly"
+    path = "/storage/slurm/keunecke/semantickitti/"
+
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))

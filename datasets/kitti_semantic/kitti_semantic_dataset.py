@@ -39,7 +39,7 @@ BASE_SIZES = {
 }
 
 class KittiSemanticDataset(Dataset):
-    def __init__(self, data_path: str, train: bool, target_image_size=(370, 1226)) -> None:
+    def __init__(self, data_path: str, train: bool, target_image_size=(192, 640)) -> None:
         self.base_path = data_path
         self.target_image_size = target_image_size
         self.train = train
@@ -76,7 +76,7 @@ class KittiSemanticDataset(Dataset):
         seq_pose_list = []
         for s in self.sequences:
             pose_list = []
-            pose_path =  os.path.join(self.base_path, f"sequences/{s}/poses.txt")
+            pose_path =  os.path.join(self.base_path, f"poses_dvso/{s}.txt")
             with open(pose_path, "rb") as f:
                 data = f.readlines()
             for x in data:
@@ -198,12 +198,12 @@ class KittiSemanticDataset(Dataset):
         return seq_image_list
 
     def load_image_pair(self, seq, idx) -> np.ndarray[Any, Any]:
-        slurm_path = "/storage/group/dataset_mirrors/kitti_odom_grey/sequences/"
-        img2 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_2/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-        img3 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_3/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        slurm_path = "/storage/group/dataset_mirrors/kitti_odom_grey/"
+        img2 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_0/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img3 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_1/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
         return [img2, img3]
     
-    def preprocess_image(self, img: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
+    def _preprocess_image(self, img: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
         if self.target_image_size:
             img = cv2.resize(img, (self.target_image_size[1], self.target_image_size[0]), interpolation=cv2.INTER_LINEAR)
         img = np.transpose(img, (2, 0, 1)) * 2 - 1
@@ -241,8 +241,9 @@ class KittiSemanticDataset(Dataset):
             raise IndexError()
         
         imgs = self.load_image_pair(sequence_index, index)
-        imgs = [self.preprocess_image(img) for img in imgs]
-        pose_left = self.poses[sequence_index][index] @ self.calib[sequence_index]["T_w_cam0"]
+        imgs = [self._preprocess_image(img) for img in imgs]
+        pose_left = self.calib[sequence_index]["T_w_cam0"] @ np.linalg.inv(self.poses[sequence_index][index])
+        # pose_left = self.poses[sequence_index][index] @ self.calib[sequence_index]["T_w_cam0"]
         pose_right = self.poses[sequence_index][index] @ self.calib[sequence_index]["T_w_cam1"]
         poses = [pose_left.astype(np.float32), pose_right.astype(np.float32)]
         projs = [self.calib[sequence_index]["K"], self.calib[sequence_index]["K"]]
@@ -250,9 +251,12 @@ class KittiSemanticDataset(Dataset):
         merged_scan = np.zeros([merged_scan_compressed.shape[0], 7])
         indices = merged_scan_compressed[:, 3].astype(int)
         merged_scan[:, :3] = merged_scan_compressed[:, :3]
-        # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[3, :3] for i in indices])
-        merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
+        #print([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"])) for i in indices])
+        merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:3, 3] for i in indices])
+        # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
         merged_scan[:, 6] = merged_scan_compressed[:, 4]
+
+        # colors = [self.color_map[x] for x in np.array(merged_scan[:, 6])]
 
         _proc_time = np.array(time.time() - _start_time)
 
@@ -264,6 +268,7 @@ class KittiSemanticDataset(Dataset):
             "merged_scan": merged_scan.astype(np.float32),
             "sequence": np.array([sequence_index], np.int32),
             "ids": np.array(index, np.int32),
+            "colors": 0, 
             "t__get_item__": np.array([_proc_time])
         }
 
@@ -295,7 +300,9 @@ class KittiSemanticDataset(Dataset):
 if __name__ == "__main__":
     dataset = KittiSemanticDataset(
         data_path="/storage/slurm/keunecke/semantickitti",
-        train=True)
+        train=True,
+        target_image_size=(370,1226))
+    print("Load success")
     x = dataset[100]
-    print(x)
+    print(x["merged_scan"])
     # dataset.visualize_sequence(0)
