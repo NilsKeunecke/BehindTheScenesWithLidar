@@ -143,18 +143,6 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     recon_imgs = data["fine"][0]["rgb"].detach()[0]
     recon_depths = [f["depth"].detach()[0] for f in data["fine"]]
 
-    #Construct projection
-    projections_images = deepcopy(images)
-    for idx in range(len(projections_images)):
-        points = data["merged_scan"][:, :4]
-        points[:, 3] = 1.0
-        label = data["merged_scan"][:, 6]
-        normalized_points = data["projs"][idx].dot(data["poses"][idx].dot(points.T)[:3, :]).T
-        colors = np.array([data.color_map[x] for x in np.array(label)])
-        for point, color in zip(normalized_points, colors): 
-            bgr_color = np.array([color[2], color[1], color[0]])
-            cv2.circle(projections_images[idx], (int((point[0] *.5 + 0.5) * projections_images[idx].shape[1]), int((point[1] *.5 + 0.5) * projections_images[idx].shape[0])), 1, bgr_color, 1)
-
     depth_profile = data["coarse"][0]["alphas"].detach()[0]
     alphas = data["coarse"][0]["alphas"].detach()[0]
     invalids = data["coarse"][0]["invalid"].detach()[0]
@@ -175,28 +163,27 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
 
     #Construct projection
     projections_images = deepcopy(images)
-    for idx in range(len(projections_images)):
-        points = data["merged_scan"].detach()[0][:, 3:7]
-        points[:, 3] = 1.0
-        normalized_points = torch.matmul(data["projs"][idx].detach()[0], torch.matmul(data["poses"][idx].detach()[0], points.T)[:3, :]).T
-        normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
-        direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["merged_scan"].detach()[0][:, 3:6]
-        # true_direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][idx].detach()[0][:3, 3]
-        depth = torch.norm(direction_vecs, dim=1)
-        depth = (depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
-        invalid = 0
-        from matplotlib import cm
-        viridis = cm.get_cmap('inferno', 255)
-        for point, dv in zip(normalized_points, depth): 
-            dv = dv.cpu().numpy()
-            bgr_color = torch.Tensor(viridis(dv)[:3])
-            width = int((point[0] *.5 + 0.5) * projections_images[idx].shape[2])
-            height = int((point[1] *.5 + 0.5) * projections_images[idx].shape[1])
-            if 0 <= width < projections_images[idx].shape[2] and 0 <= height < projections_images[idx].shape[1]:
-                projections_images[idx][:, height, width] = bgr_color
-            else:
-                invalid += 1
-        print("Invalid projections: ", invalid)
+    points = data["merged_scan"].detach()[0][:, :4]
+    points[:, 3] = 1.0
+    normalized_points = torch.matmul(data["projs"][0].detach()[0], torch.matmul(data["poses"][0].detach()[0], points.T)[:3, :]).T
+    normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
+    direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3] # data["merged_scan"].detach()[0][:, 3:6]
+    # true_direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3]
+    depth = torch.norm(direction_vecs, dim=1)
+    depth = (depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
+    invalid = 0
+    from matplotlib import cm
+    viridis = cm.get_cmap('inferno', 255)
+    for point, dv in zip(normalized_points, depth): 
+        dv = dv.cpu().numpy()
+        bgr_color = torch.Tensor(viridis(dv)[:3])
+        width = int((point[0] *.5 + 0.5) * projections_images[0].shape[2])
+        height = int((point[1] *.5 + 0.5) * projections_images[0].shape[1])
+        if 0 <= width < projections_images[0].shape[2] and 0 <= height < projections_images[0].shape[1]:
+            projections_images[0][:, height, width] = bgr_color
+        else:
+            invalid += 1
+    print("Invalid projections: ", invalid ) # -1.0003 & 1.0064
 
 
     # Aggregate recon_imgs by taking the mean

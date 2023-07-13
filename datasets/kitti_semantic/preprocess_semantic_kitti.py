@@ -8,7 +8,7 @@ from time import time
 import open3d as o3d
 from kitti_semantic_dataset import KittiSemanticDataset
     
-def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, ignore_moving: bool = True, foresight_range: int = 50) -> None:
+def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, ignore_moving: bool = True, foresight_range: int = 30) -> None:
     t_start = time()
     for seq_idx, seq in tqdm(enumerate(data.sequences)): # For each sequence
         for pose_idx in tqdm(range(0, len(data.poses[seq_idx]) - foresight_range)): # Go over every pose
@@ -91,10 +91,10 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 np.savez_compressed(ms_path, merged_scan.astype(np.float16))
             elif compression_strategy == "patches":
                 max_points_per_bin = 64
-                sampling = "random_weighted_by_distance"
+                sampling = "random"
                 
-                sampled_merged_scan = merged_scan[:2]
-                points = deepcopy(merged_scan)
+                sampled_merged_scan = merged_scan[:points_in_first_scan] # Always use all points from first scan
+                points = deepcopy(merged_scan[points_in_first_scan:])
                 points[:, 3] = 1.0
                 projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
                 projected_points[:, :2] = projected_points[:, :2] / projected_points[:, 2][..., None]
@@ -103,7 +103,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 biny = np.arange(-1, 1, 2/40)
                 statistics = stats.binned_statistic_2d(projected_points[:, 0], projected_points[:, 1], None, 'count', bins=[binx, biny])
                 for idx in range(129*41):
-                    vals = statistics.binnumber == idx
+                    vals = np.concatenate((np.full((points_in_first_scan), False), (statistics.binnumber == idx)), axis=0)
                     num_vals = np.sum(vals)
                     if num_vals == 0:
                         continue
@@ -114,16 +114,27 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                         if sampling == "random":
                             indices = np.arange(0, candidates.shape[0])
                             np.random.shuffle(indices)
-                            sampled_merged_scan = np.concatenate((sampled_merged_scan,                              [indices[:max_points_per_bin]]), axis=0)
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
                         elif sampling == "closest":
                             dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-pose[:3, 3],  candidates[:, :3]-pose[:3, 3]))
                             indices = np.argsort(dist, axis=-1)[:max_points_per_bin]
                             sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices]), axis=0)
-                        elif sampling == "random_weighted_by_distance":
+                        elif sampling == "closest_to_lidar":
+                            dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-np.array(data.poses[seq_idx])[candidates[:, 3].astype(int), :3, 3],  candidates[:, :3]-np.array(data.poses[seq_idx])[candidates[:, 3].astype(int), :3, 3]))
+                            indices = np.argsort(dist, axis=-1)[:max_points_per_bin]
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices]), axis=0)
+                        elif sampling == "random_weighted_by_distance_to_camera":
                             indices = np.arange(0, candidates.shape[0])
                             dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-pose[:3, 3],  candidates[:, :3]-pose[:3, 3]))
                             probs = dist / np.sum(dist)
                             np.random.choice(indices, max_points_per_bin, replace=False, p=probs)
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
+                        elif sampling == "random_weighted_by_distance_to_lidar":
+                            indices = np.arange(0, candidates.shape[0])
+                            dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-np.array(data.poses[seq_idx])[candidates[:, 3].astype(int), :3, 3],  candidates[:, :3]-np.array(data.poses[seq_idx])[candidates[:, 3].astype(int), :3, 3]))
+                            probs = dist / np.sum(dist)
+                            np.random.choice(indices, max_points_per_bin, replace=False, p=probs)
+                            sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
                         else:
                             raise NotImplementedError("Please select a valid sampling method!")
                 np.savez_compressed(ms_path, sampled_merged_scan.astype(np.float16))
@@ -150,7 +161,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
 
 
 if __name__ == "__main__":
-    path = "/Users/nilskeunecke/semantic-kitti_partly"
+    path = "/storage/slurm/keunecke/semantickitti"
 
     # Preprocess Train data
     train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))

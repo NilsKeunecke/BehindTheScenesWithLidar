@@ -27,13 +27,13 @@ class LidarRaySampler(RaySampler):
         for n_ in range(merged_scan.shape[0]):
             pix_inds = torch.randperm(merged_scan.shape[1])[:self.ray_batch_size]
             points = merged_scan[n_, pix_inds]
-            cam_fars = torch.zeros(self.ray_batch_size, device=device)
-            cam_fars[:] = self.z_far
             cam_nears = torch.zeros(self.ray_batch_size, device=device)
             cam_nears[:] = self.z_near
             direction_vecs = points[:, :3] - points[:, 3:6]
             depth = torch.norm(direction_vecs, dim=1)
             direction_vecs = torch.divide(direction_vecs.T, depth).T
+            cam_fars = torch.zeros(self.ray_batch_size, device=device)
+            cam_fars[:] = depth + 3
             depth_gt.append(depth)
             rays.append(torch.cat((points[:, 3:6], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
 

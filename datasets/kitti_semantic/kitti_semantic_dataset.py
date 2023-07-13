@@ -45,7 +45,7 @@ class KittiSemanticDataset(Dataset):
         self.train = train
         if self.train:
             #self.sequences = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
-            self.sequences = ['04'] # Use for testing as this is very small sequence
+            self.sequences = ['07'] # Use for testing as this is very small sequence
         else:
             self.sequences = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21']
         self.color_map = yaml.safe_load(open(os.path.join(self.base_path, "semantic-kitti.yaml"), 'r'))["color_map"]
@@ -191,16 +191,16 @@ class KittiSemanticDataset(Dataset):
         for s in self.sequences:
             image_list = []
             for left, right in zip(sorted(os.listdir(os.path.join(self.base_path, f"sequences/{s}/image_2"))), sorted(os.listdir(os.path.join(self.base_path, f"sequences/{s}/image_3")))):
-                img2 = cv2.imread(os.path.join(self.base_path, f"sequences/{s}/image_2/{left}"))
-                img3 = cv2.imread(os.path.join(self.base_path, f"sequences/{s}/image_3/{right}"))
+                img2 = cv2.imread(os.path.join(self.base_path, f"sequences/{s}/image_0/{left}"))
+                img3 = cv2.imread(os.path.join(self.base_path, f"sequences/{s}/image_1/{right}"))
                 image_list.append([img2, img3])
             seq_image_list.append(image_list)
         return seq_image_list
 
     def load_image_pair(self, seq, idx) -> np.ndarray[Any, Any]:
         slurm_path = "/storage/group/dataset_mirrors/kitti_odom_grey/"
-        img2 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_2/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-        img3 = cv2.cvtColor(cv2.imread(os.path.join(self.base_path, f"sequences/{self.sequences[seq]}/image_3/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img2 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_0/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img3 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_1/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
         return [img2, img3]
     
     def _preprocess_image(self, img: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
@@ -237,6 +237,7 @@ class KittiSemanticDataset(Dataset):
         _start_time = time.time()
 
         sequence_index, index = self.get_sequence_index(index)
+        index += 50 # Give later frame to make overfit more interesting
         if sequence_index is None:
             raise IndexError()
         
@@ -251,7 +252,6 @@ class KittiSemanticDataset(Dataset):
         merged_scan = np.zeros([merged_scan_compressed.shape[0], 7])
         indices = merged_scan_compressed[:, 3].astype(int)
         merged_scan[:, :3] = merged_scan_compressed[:, :3]
-        #print([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"])) for i in indices])
         merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:3, 3] for i in indices])
         # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
         merged_scan[:, 6] = merged_scan_compressed[:, 4]
@@ -299,10 +299,10 @@ class KittiSemanticDataset(Dataset):
 
 if __name__ == "__main__":
     dataset = KittiSemanticDataset(
-        data_path="/Users/nilskeunecke/semantic-kitti_partly",
+        data_path="/storage/slurm/keunecke/semantickitti",
         train=True,
         target_image_size=(370,1226))
     print("Load success")
-    x = dataset[0]
+    x = dataset[100]
     print(x["merged_scan"])
     # dataset.visualize_sequence(0)
