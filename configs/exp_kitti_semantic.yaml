@@ -4,7 +4,7 @@ defaults:
     - _self_
 
 name: "kitti_semantic"
-model: "bts_overfit"
+model: "bts"
 output_path: "out/kitti_semantic"
 
 num_epochs: 100000

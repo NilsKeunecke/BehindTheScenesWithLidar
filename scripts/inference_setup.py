@@ -19,6 +19,7 @@ sys.path.append(os.path.abspath(os.getcwd()))
 from datasets.realestate10k.realestate10k_dataset import RealEstate10kDataset
 from datasets.kitti_360.kitti_360_dataset import Kitti360Dataset
 from datasets.kitti_raw.kitti_raw_dataset import KittiRawDataset
+from datasets.kitti_semantic.kitti_semantic_dataset import KittiSemanticDataset
 
 from models.bts.model import BTSNet
 from models.bts.model.ray_sampler import ImageRaySampler
@@ -96,6 +97,34 @@ def get_pts(x_range, y_range, z_range, x_res, y_res, z_res, cam_incl_adjust=None
 
     return xyz
 
+
+def setup_kittisemantic(out_folder):
+    resolution = (192, 640)
+
+    dataset = KittiSemanticDataset(
+        data_path="/storage/slurm/keunecke/semantickitti",
+        train=True,
+        target_image_size=resolution
+    )
+
+    config_path = "exp_kitti_semantic"
+
+    cp_path = Path(f"out/kitti_semantic/kitti_semantic_backend-None-1_20230713-145353")
+    cp_name = cp_path.name
+    print(cp_path)
+    cp_path = next(cp_path.glob("training*.pt"))
+
+    out_path = Path(f"media/{out_folder}/kitti_semantic/{cp_name}")
+
+    cam_incl_adjust = torch.tensor(
+    [  [1.0000000,  0.0000000,  0.0000000, 0],
+       [0.0000000,  0.9961947, -0.0871557, 0],
+       [0.0000000,  0.0871557,  0.9961947, 0],
+       [0.0000000,  000000000,  0.0000000, 1]
+    ],
+    dtype=torch.float32).view(1, 4, 4)
+
+    return dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust
 
 def setup_kitti360(out_folder, split="test", split_name="seg"):
     resolution = (192, 640)

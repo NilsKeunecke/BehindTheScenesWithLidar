@@ -44,20 +44,20 @@ class KittiSemanticDataset(Dataset):
         self.target_image_size = target_image_size
         self.train = train
         if self.train:
-            #self.sequences = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
+            # self.sequences = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
             self.sequences = ['07'] # Use for testing as this is very small sequence
         else:
             self.sequences = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21']
         self.color_map = yaml.safe_load(open(os.path.join(self.base_path, "semantic-kitti.yaml"), 'r'))["color_map"]
-        if train:
-            self.labels = self._load_labels()
+        # if train:
+        #     self.labels = self._load_labels()
         self.calib = self._load_calibrations()
         self.poses = self._load_poses()
         
         # self.merged_scans = self._load_merged_scans() # Very memory intensive
         # self.scan_list = self._load_pointclouds() # Very memory intensive
         # self.images = self._load_images() # Very memory intensive
-        self.length = sum([len(x) for x in self.poses])
+        self.length = sum([len(x) for x in self.poses]) - (29*11)
         super().__init__() 
 
     def __len__(self) -> int:
@@ -65,8 +65,8 @@ class KittiSemanticDataset(Dataset):
     
     def get_sequence_index(self, index: int):
         for dataset_index, seq_poses in enumerate(self.poses):
-            if index >= len(seq_poses):
-                index = index - len(seq_poses)
+            if index >= (len(seq_poses)-29):
+                index = index - len(seq_poses) + 29
             else:
                 return dataset_index, index
         return None, None
@@ -221,15 +221,15 @@ class KittiSemanticDataset(Dataset):
             if not os.path.isdir(os.path.join(self.base_path, f"merged_scans/{s}/")):
                 logging.warning(f"No merged scans found for sequence {s}. Skipping.")
                 continue
-            for f in sorted(os.listdir(os.path.join(self.base_path, f"merged_scans/{s}/"))):
-                with open(os.path.join(os.path.join(self.base_path, f"merged_scans/{s}/"), f), "rb") as merged_scans_file:
+            for f in sorted(os.listdir(os.path.join(self.base_path, f"merged_scans_rand/{s}/"))):
+                with open(os.path.join(os.path.join(self.base_path, f"merged_scans_rand/{s}/"), f), "rb") as merged_scans_file:
                     merged_scans = np.load(merged_scans_file)
                     merged_scans_list.append(merged_scans)
             seq_merged_scans.append(merged_scans_list)
         return seq_merged_scans
     
     def load_merged_scan(self, seq: int, idx: int) -> np.ndarray[Any, Any]:
-        merged_scan = np.load(os.path.join(self.base_path, f"merged_scans/{self.sequences[seq]}/{idx:06d}.npz"))
+        merged_scan = np.load(os.path.join(self.base_path, f"merged_scans_rand/{self.sequences[seq]}/{idx:06d}.npz"))
         merged_scan = merged_scan["arr_0"]
         return merged_scan
 
@@ -237,15 +237,15 @@ class KittiSemanticDataset(Dataset):
         _start_time = time.time()
 
         sequence_index, index = self.get_sequence_index(index)
-        index += 50 # Give later frame to make overfit more interesting
         if sequence_index is None:
             raise IndexError()
-        
+
         imgs = self.load_image_pair(sequence_index, index)
         imgs = [self._preprocess_image(img) for img in imgs]
-        pose_left = self.calib[sequence_index]["T_w_cam0"] @ np.linalg.inv(self.poses[sequence_index][index])
-        # pose_left = self.poses[sequence_index][index] @ self.calib[sequence_index]["T_w_cam0"]
-        pose_right = self.poses[sequence_index][index] @ self.calib[sequence_index]["T_w_cam1"]
+        # pose_left = self.calib[sequence_index]["T_w_cam0"] @ np.linalg.inv(self.poses[sequence_index][index])
+        # pose_right = self.calib[sequence_index]["T_w_cam1"] @ np.linalg.inv(self.poses[sequence_index][index])
+        pose_left = self.poses[sequence_index][index] @ np.linalg.inv(self.calib[sequence_index]["T_w_cam0"])
+        pose_right = self.poses[sequence_index][index] @ np.linalg.inv(self.calib[sequence_index]["T_w_cam1"])
         poses = [pose_left.astype(np.float32), pose_right.astype(np.float32)]
         projs = [self.calib[sequence_index]["K"], self.calib[sequence_index]["K"]]
         merged_scan_compressed = self.load_merged_scan(sequence_index, index)
@@ -255,7 +255,9 @@ class KittiSemanticDataset(Dataset):
         merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:3, 3] for i in indices])
         # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
         merged_scan[:, 6] = merged_scan_compressed[:, 4]
-
+        indices = np.arange(0, merged_scan.shape[0])
+        np.random.shuffle(indices)
+        merged_scan = merged_scan[indices[:64000]]
         # colors = [self.color_map[x] for x in np.array(merged_scan[:, 6])]
 
         _proc_time = np.array(time.time() - _start_time)

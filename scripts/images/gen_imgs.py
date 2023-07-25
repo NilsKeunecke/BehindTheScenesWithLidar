@@ -19,12 +19,12 @@ def main():
     s_img = True
     s_depth = True
     s_profile = True
-    dry_run = True
+    dry_run = False
 
     indices = [0, 1, 2, 3]
 
-    task = "KITTI-360"
-    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K"]
+    task = "KITTI_Semantic"
+    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K", "KITTI_Semantic"]
 
     if task == "KITTI-360":
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kitti360("imgs")
@@ -32,6 +32,8 @@ def main():
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittiraw("imgs")
     elif task == "RealEstate10K":
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_re10k("imgs")
+    elif task == "KITTI_Semantic":
+        dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittisemantic("imgs")
     else:
         raise ValueError(f"Invalid task: {task}")
 

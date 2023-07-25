@@ -74,15 +74,14 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                     exit()
 
             # Save all points in new pcd
-            if not os.path.isdir(os.path.join(data.base_path, f"merged_scans/{seq}")):
-                os.makedirs(os.path.join(data.base_path, f"merged_scans/{seq}/"))
-            ms_path = os.path.join(data.base_path, f"merged_scans/{seq}/{pose_idx:06d}.npz")
+            if not os.path.isdir(os.path.join(data.base_path, f"merged_scans_rand/{seq}")):
+                os.makedirs(os.path.join(data.base_path, f"merged_scans_rand/{seq}/"))
+            ms_path = os.path.join(data.base_path, f"merged_scans_rand/{seq}/{pose_idx:06d}.npz")
             if os.path.isfile(ms_path):
                 os.remove(ms_path)
             merged_scan = np.concatenate(point_list, axis=0)
 
             compression_strategy = "patches"
-            print("Subsampling..")
             if compression_strategy == "subsample":
                 # Subsample the merged scan to save memory
                 indices = np.arange(0, merged_scan.shape[0])
@@ -99,10 +98,10 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                 projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
                 projected_points[:, :2] = projected_points[:, :2] / projected_points[:, 2][..., None]
                 assert (projected_points[:, :2].max() < 1) & (projected_points[:, :2].min() > -1)
-                binx = np.arange(-1, 1, 2/128)
-                biny = np.arange(-1, 1, 2/40)
+                binx = np.arange(-1, 1, 2/64)
+                biny = np.arange(-1, 1, 2/20)
                 statistics = stats.binned_statistic_2d(projected_points[:, 0], projected_points[:, 1], None, 'count', bins=[binx, biny])
-                for idx in range(129*41):
+                for idx in range(65*21):
                     vals = np.concatenate((np.full((points_in_first_scan), False), (statistics.binnumber == idx)), axis=0)
                     num_vals = np.sum(vals)
                     if num_vals == 0:
@@ -115,7 +114,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                             indices = np.arange(0, candidates.shape[0])
                             np.random.shuffle(indices)
                             sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
-                        elif sampling == "closest":
+                        elif sampling == "closest_to_camera":
                             dist = np.sqrt(np.einsum('ij,ij->i', candidates[:, :3]-pose[:3, 3],  candidates[:, :3]-pose[:3, 3]))
                             indices = np.argsort(dist, axis=-1)[:max_points_per_bin]
                             sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices]), axis=0)
@@ -137,7 +136,7 @@ def preprocess_dataset(data: KittiSemanticDataset, visualize: bool = False, igno
                             sampled_merged_scan = np.concatenate((sampled_merged_scan, candidates[indices[:max_points_per_bin]]), axis=0)
                         else:
                             raise NotImplementedError("Please select a valid sampling method!")
-                np.savez_compressed(ms_path, sampled_merged_scan.astype(np.float16))
+                np.savez_compressed(ms_path, sampled_merged_scan.astype(np.float32))
                 # points = deepcopy(sampled_merged_scan)
                 # points[:, 3] = 1.0
                 # projected_points = data.calib[seq_idx]["K"].dot(data.calib[seq_idx]["T_w_cam0"].dot(np.linalg.inv(pose).dot(points[:, :4].T))[:3, :]).T
@@ -164,7 +163,11 @@ if __name__ == "__main__":
     path = "/storage/slurm/keunecke/semantickitti"
 
     # Preprocess Train data
-    train_data = KittiSemanticDataset(path, train=True, target_image_size=(370,1226))
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sequence")
+    args = parser.parse_args()
+    train_data = KittiSemanticDataset(path, train=args.sequence, target_image_size=(370,1226))
     print("Load success")
     preprocess_dataset(train_data, visualize=False, ignore_moving=True)
 

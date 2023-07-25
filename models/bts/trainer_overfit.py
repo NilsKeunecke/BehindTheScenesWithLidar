@@ -42,14 +42,14 @@ class DataloaderDummy(DataLoader):
                  batch_sampler: Union[Sampler[Sequence], Iterable[Sequence], None] = None, num_workers: int = 0,
                  collate_fn: Optional[_collate_fn_t] = None, pin_memory: bool = False, drop_last: bool = False,
                  timeout: float = 0, worker_init_fn: Optional[_worker_init_fn_t] = None, multiprocessing_context=None,
-                 generator=None, *, prefetch_factor=None, persistent_workers: bool = False, # prefatchfactor was 2
+                 generator=None, *, prefetch_factor=2, persistent_workers: bool = False,
                  pin_memory_device: str = ""):
         super().__init__(dataset, batch_size, shuffle, sampler, batch_sampler, num_workers, collate_fn, pin_memory,
                          drop_last, timeout, worker_init_fn, multiprocessing_context, generator,
                          prefetch_factor=prefetch_factor, persistent_workers=persistent_workers,
                          pin_memory_device=pin_memory_device)
 
-        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cuda:0") # Changes was: cuda:0
+        self.element = to(map_fn(map_fn(dataset.__getitem__(0), torch.tensor), unsqueezer), "cuda:0")
 
     def _get_iterator(self):
         return iter([self.element])
@@ -165,7 +165,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     projections_images = deepcopy(images)
     points = data["merged_scan"].detach()[0][:, :4]
     points[:, 3] = 1.0
-    normalized_points = torch.matmul(data["projs"][0].detach()[0], torch.matmul(data["poses"][0].detach()[0], points.T)[:3, :]).T
+    normalized_points = torch.matmul(data["projs"][0].detach()[0], torch.matmul(torch.inverse(data["poses"][0].detach()[0]), points.T)[:3, :]).T
     normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
     direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3] # data["merged_scan"].detach()[0][:, 3:6]
     # true_direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3]
