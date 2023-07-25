@@ -57,7 +57,7 @@ class DepthAwareLoss:
             gt_depth = data["rgb_gt"]
             computed_depth = data["coarse"][0]["depth"]
             item_loss = torch.abs(gt_depth-computed_depth)
-            item_loss = torch.sum(item_loss) / gt_depth.shape[-1]
+            item_loss = torch.mean(item_loss) # TODO Validate
             loss = item_loss
 
             loss_dict["loss_rgb_coarse"] = -1

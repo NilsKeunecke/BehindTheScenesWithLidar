@@ -40,6 +40,8 @@ BASE_SIZES = {
 
 class KittiSemanticDataset(Dataset):
     def __init__(self, data_path: str, train: bool, target_image_size=(192, 640)) -> None:
+        t_start = time.time()
+        logging.info("Init...")
         self.base_path = data_path
         self.target_image_size = target_image_size
         self.train = train
@@ -59,6 +61,7 @@ class KittiSemanticDataset(Dataset):
         # self.images = self._load_images() # Very memory intensive
         self.length = sum([len(x) for x in self.poses]) - (29*11)
         super().__init__() 
+        logging.info(f"Init took: {time.time()-t_start}")
 
     def __len__(self) -> int:
         return self.length
