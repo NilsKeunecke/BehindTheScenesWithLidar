@@ -98,18 +98,18 @@ def get_pts(x_range, y_range, z_range, x_res, y_res, z_res, cam_incl_adjust=None
     return xyz
 
 
-def setup_kittisemantic(out_folder):
+def setup_kittisemantic(out_folder, train=False):
     resolution = (192, 640)
 
     dataset = KittiSemanticDataset(
         data_path="/storage/slurm/keunecke/semantickitti",
-        train=True,
+        train=train,
         target_image_size=resolution
     )
 
     config_path = "exp_kitti_semantic"
 
-    cp_path = Path(f"out/kitti_semantic/kitti_semantic_backend-None-1_20230713-145353")
+    cp_path = Path(f"out/kitti_semantic/kitti_semantic_backend-None-1_20230802-184758")
     cp_name = cp_path.name
     print(cp_path)
     cp_path = next(cp_path.glob("training*.pt"))
@@ -118,8 +118,8 @@ def setup_kittisemantic(out_folder):
 
     cam_incl_adjust = torch.tensor(
     [  [1.0000000,  0.0000000,  0.0000000, 0],
-       [0.0000000,  0.9961947, -0.0871557, 0],
-       [0.0000000,  0.0871557,  0.9961947, 0],
+       [0.0000000,  1.0000000, 0.0000000, 0],
+       [0.0000000,  0.0000000,  1.000000, 0],
        [0.0000000,  000000000,  0.0000000, 1]
     ],
     dtype=torch.float32).view(1, 4, 4)

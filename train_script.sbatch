@@ -2,9 +2,9 @@
 #SBATCH --job-name="BTS_Lidar"
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:1,VRAM:48G
+#SBATCH --gres=gpu:1,VRAM:24G
 #SBATCH --mem=32G
-#SBATCH --time=72:00:00
+#SBATCH --time=96:00:00
 #SBATCH --mail-type=ALL
 #SBATCH --output=/storage/slurm/logs/slurm-%j.out
 #SBATCH --error=/storage/slurm/logs/slurm-%j.out

@@ -7,7 +7,7 @@ import struct
 import logging
 import cv2
 import time
-import open3d as o3d
+# import open3d as o3d
 import yaml
 from tqdm import tqdm
 from torch.utils.data import Dataset
@@ -40,16 +40,18 @@ BASE_SIZES = {
 
 class KittiSemanticDataset(Dataset):
     def __init__(self, data_path: str, train: bool, target_image_size=(192, 640)) -> None:
-        t_start = time.time()
-        logging.info("Init...")
         self.base_path = data_path
         self.target_image_size = target_image_size
         self.train = train
-        if self.train:
-            # self.sequences = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
-            self.sequences = ['07'] # Use for testing as this is very small sequence
-        else:
+        if self.train == "train":
+            self.sequences = ['00', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10']
+            # self.sequences = ['07'] # Use for testing as this is very small sequence
+        elif self.train == "video":
+            self.sequences = ['15']
+        elif self.train == "test":
             self.sequences = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '20', '21']
+        else: 
+            raise NotImplementedError("Not a valid subset of the dataset")
         self.color_map = yaml.safe_load(open(os.path.join(self.base_path, "semantic-kitti.yaml"), 'r'))["color_map"]
         # if train:
         #     self.labels = self._load_labels()
@@ -59,17 +61,16 @@ class KittiSemanticDataset(Dataset):
         # self.merged_scans = self._load_merged_scans() # Very memory intensive
         # self.scan_list = self._load_pointclouds() # Very memory intensive
         # self.images = self._load_images() # Very memory intensive
-        self.length = sum([len(x) for x in self.poses]) - (29*11)
+        self.length = sum([len(x) for x in self.poses]) - (30*11)
         super().__init__() 
-        logging.info(f"Init took: {time.time()-t_start}")
 
     def __len__(self) -> int:
         return self.length
     
     def get_sequence_index(self, index: int):
         for dataset_index, seq_poses in enumerate(self.poses):
-            if index >= (len(seq_poses)-29):
-                index = index - len(seq_poses) + 29
+            if index >= (len(seq_poses)-30):
+                index = index - len(seq_poses) + 30
             else:
                 return dataset_index, index
         return None, None
@@ -201,9 +202,9 @@ class KittiSemanticDataset(Dataset):
         return seq_image_list
 
     def load_image_pair(self, seq, idx) -> np.ndarray[Any, Any]:
-        slurm_path = "/storage/group/dataset_mirrors/kitti_odom_grey/"
-        img2 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_0/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
-        img3 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_1/{idx:06d}.png")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        slurm_path = "/storage/group/dataset_mirrors/01_incoming/kitti_odom_color/"
+        img2 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_2/{idx:06d}.jpg")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
+        img3 = cv2.cvtColor(cv2.imread(os.path.join(slurm_path, f"sequences/{self.sequences[seq]}/image_3/{idx:06d}.jpg")), cv2.COLOR_BGR2RGB).astype(np.float32) / 255
         return [img2, img3]
     
     def _preprocess_image(self, img: np.ndarray[Any, Any]) -> np.ndarray[Any, Any]:
@@ -251,17 +252,22 @@ class KittiSemanticDataset(Dataset):
         pose_right = self.poses[sequence_index][index] @ np.linalg.inv(self.calib[sequence_index]["T_w_cam1"])
         poses = [pose_left.astype(np.float32), pose_right.astype(np.float32)]
         projs = [self.calib[sequence_index]["K"], self.calib[sequence_index]["K"]]
-        merged_scan_compressed = self.load_merged_scan(sequence_index, index)
-        merged_scan = np.zeros([merged_scan_compressed.shape[0], 7])
-        indices = merged_scan_compressed[:, 3].astype(int)
-        merged_scan[:, :3] = merged_scan_compressed[:, :3]
-        merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:3, 3] for i in indices])
-        # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
-        merged_scan[:, 6] = merged_scan_compressed[:, 4]
-        indices = np.arange(0, merged_scan.shape[0])
-        np.random.shuffle(indices)
-        merged_scan = merged_scan[indices[:64000]]
-        # colors = [self.color_map[x] for x in np.array(merged_scan[:, 6])]
+        
+        if self.train == "train":
+            merged_scan_compressed = self.load_merged_scan(sequence_index, index)
+            merged_scan = np.zeros([merged_scan_compressed.shape[0], 7])
+            indices = merged_scan_compressed[:, 3].astype(int)
+            merged_scan[:, :3] = merged_scan_compressed[:, :3]
+            merged_scan[:, 3:6] = np.array(self.poses[sequence_index])[indices].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:, :3, 3]
+            # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i].dot(np.linalg.inv(self.calib[sequence_index]["T_w_lidar"]))[:3, 3] for i in indices])
+            # merged_scan[:, 3:6] = np.array([self.poses[sequence_index][i][3, :3] for i in indices]) # Should be wrong but works
+            merged_scan[:, 6] = merged_scan_compressed[:, 4]
+            indices = np.arange(0, merged_scan.shape[0])
+            np.random.shuffle(indices)
+            merged_scan = merged_scan[indices[:32000]].astype(np.float32)
+            # colors = [self.color_map[x] for x in np.array(merged_scan[:, 6])]
+        else:
+            merged_scan = []
 
         _proc_time = np.array(time.time() - _start_time)
 
@@ -270,7 +276,7 @@ class KittiSemanticDataset(Dataset):
             "projs": projs,
             "poses": poses,
             "depths": [],
-            "merged_scan": merged_scan.astype(np.float32),
+            "merged_scan": merged_scan,
             "sequence": np.array([sequence_index], np.int32),
             "ids": np.array(index, np.int32),
             "colors": 0, 
@@ -279,33 +285,33 @@ class KittiSemanticDataset(Dataset):
 
         return data
 
-    def visualize_sequence(self, seq: int) -> None:
-        pcd_list = []
-        for idx in tqdm(range(len(self.poses[seq]))):
-            pcd = o3d.geometry.PointCloud()
-            v3d = o3d.utility.Vector3dVector
-            if self.train:
-                color_list = [self.color_map[label] for label in self.labels[seq][idx]]
-            scan = self._load_pointcloud(seq, idx)
-            points = np.ones_like(scan)
-            points[:, :3] = scan[:, :3]
-            points = np.array([self.poses[seq][idx].dot(self.calib[seq]["T_w_lidar"]).dot(np.array(point)) for point in points])
-            pcd.points = v3d(points[:, :3])
-            if self.train:
-                pcd.colors = v3d(color_list)
-            pcd_list.append(pcd)
-        vis = o3d.visualization.Visualizer()
-        vis.create_window(width=1920, height=1080)
-        for pcd in pcd_list:
-            vis.add_geometry(pcd)
-        opt = vis.get_render_option()
-        opt.background_color = np.array([0, 0, 0])
-        vis.run()
+    # def visualize_sequence(self, seq: int) -> None:
+    #     pcd_list = []
+    #     for idx in tqdm(range(len(self.poses[seq]))):
+    #         pcd = o3d.geometry.PointCloud()
+    #         v3d = o3d.utility.Vector3dVector
+    #         if self.train:
+    #             color_list = [self.color_map[label] for label in self.labels[seq][idx]]
+    #         scan = self._load_pointcloud(seq, idx)
+    #         points = np.ones_like(scan)
+    #         points[:, :3] = scan[:, :3]
+    #         points = np.array([self.poses[seq][idx].dot(self.calib[seq]["T_w_lidar"]).dot(np.array(point)) for point in points])
+    #         pcd.points = v3d(points[:, :3])
+    #         if self.train:
+    #             pcd.colors = v3d(color_list)
+    #         pcd_list.append(pcd)
+    #     vis = o3d.visualization.Visualizer()
+    #     vis.create_window(width=1920, height=1080)
+    #     for pcd in pcd_list:
+    #         vis.add_geometry(pcd)
+    #     opt = vis.get_render_option()
+    #     opt.background_color = np.array([0, 0, 0])
+    #     vis.run()
 
 if __name__ == "__main__":
     dataset = KittiSemanticDataset(
         data_path="/storage/slurm/keunecke/semantickitti",
-        train=True,
+        train="train",
         target_image_size=(370,1226))
     print("Load success")
     x = dataset[100]

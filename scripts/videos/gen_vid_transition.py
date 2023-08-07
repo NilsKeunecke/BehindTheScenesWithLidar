@@ -26,8 +26,8 @@ def main():
 
     indices = [0]
 
-    task = "KITTI-360"
-    assert task in ["KITTI-360", "KITTI-Raw"]
+    task = "KITTI_Semantic"
+    assert task in ["KITTI-360", "KITTI-Raw", "KITTI_Semantic"]
 
     length = 30
 
@@ -43,6 +43,13 @@ def main():
         target_angle = math.radians(85)
     elif task == "KITTI-Raw":
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittiraw("videos/transition", "test")
+        z_top = 14
+        y_top = -8
+        t_near = 8
+        t_far = 10
+        target_angle = math.radians(90)
+    elif task == "KITTI_Semantic":
+        dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittisemantic("videos/transition", False)
         z_top = 14
         y_top = -8
         t_near = 8

@@ -21,14 +21,14 @@ from utils.plotting import color_tensor
 def main():
     s_img = True
     s_depth = True
-    s_profile = False
+    s_profile = True
     dry_run = False
 
-    task = "KITTI-360"
-    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K"]
+    task = "KITTI_Semantic"
+    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K", "KITTI_Semantic"]
 
-    FROM = 1000
-    TO = 1400
+    FROM = 0
+    TO = 400
     assert 0 <= FROM < TO
 
     d_min = 3
@@ -40,6 +40,8 @@ def main():
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittiraw("videos/seq", "test")
     elif task == "RealEstate10K":
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_re10k("videos/seq", "test")
+    elif task == "KITTI_Semantic":
+        dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittisemantic("videos/seq", 'video')
     else:
         raise ValueError(f"Invalid task: {task}")
 

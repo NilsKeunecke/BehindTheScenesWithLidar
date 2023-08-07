@@ -42,6 +42,26 @@ def edge_aware_smoothness(gt_img, depth, mask=None):
     return errors
 
 
+class LidarColorMixedLoss():
+    def __init__(self, config) -> None:
+        self.lidar_loss = DepthAwareLoss()
+        self.reconstruction_loss = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+    
+    @staticmethod
+    def get_loss_metric_names():
+        return ["loss", "loss_rgb_coarse", "loss_rgb_fine", "loss_ray_entropy", "loss_depth_reg"]
+    
+    def __call__(self, data) -> Any:
+        # data_lidar = dict(list(data.items())[:len(data)//2])
+        # data_recontruction = dict(list(data.items())[len(data)//2:])
+        lidar_loss, lidar_dict = self.lidar_loss(data)
+        recon_loss, recon_dict = self.reconstruction_loss(data)
+        combined_dict = [lidar_dict, recon_dict]
+
+        return lidar_loss + recon_loss, [lidar_dict, recon_dict]
+
+        
+
 class DepthAwareLoss:
     def __init__(self) -> None:
         pass
@@ -57,7 +77,7 @@ class DepthAwareLoss:
             gt_depth = data["rgb_gt"]
             computed_depth = data["coarse"][0]["depth"]
             item_loss = torch.abs(gt_depth-computed_depth)
-            item_loss = torch.mean(item_loss) # TODO Validate
+            item_loss = torch.mean(item_loss)
             loss = item_loss
 
             loss_dict["loss_rgb_coarse"] = -1
@@ -183,6 +203,8 @@ class ReconstructionLoss:
 
                 using_fine = len(fine) > 0
 
+                if len(rgb_coarse.shape) == 3:
+                    continue
                 b, pc, h, w, nv, c = rgb_coarse.shape
 
                 # Take minimum across all reconstructed views

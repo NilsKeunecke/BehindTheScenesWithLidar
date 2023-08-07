@@ -1,5 +1,5 @@
 import math
-from copy import copy
+from copy import copy, deepcopy
 
 import ignite.distributed as idist
 import torch
@@ -20,9 +20,9 @@ from datasets.kitti_raw.kitti_raw_dataset import KittiRawDataset
 from models.common.model.scheduler import make_scheduler
 from models.common.render import NeRFRenderer
 from models.bts.model.image_processor import make_image_processor, RGBProcessor
-from models.bts.model.loss import ReconstructionLoss, DepthAwareLoss, compute_errors_l1ssim
+from models.bts.model.loss import ReconstructionLoss, DepthAwareLoss, compute_errors_l1ssim, LidarColorMixedLoss
 from models.bts.model.models_bts import BTSNet
-from models.bts.model.ray_sampler import ImageRaySampler, PatchRaySampler, RandomRaySampler, LidarRaySampler
+from models.bts.model.ray_sampler import ImageRaySampler, PatchRaySampler, RandomRaySampler, LidarRaySampler, MixedRaySampler
 from utils.base_trainer import base_training
 from utils.metrics import MeanMetric
 from utils.plotting import color_tensor
@@ -69,6 +69,8 @@ class BTSWrapper(nn.Module):
             self.train_sampler = ImageRaySampler(self.z_near, self.z_far, channels=self.train_image_processor.channels)
         elif self.sample_mode == "lidar":
             self.train_sampler = LidarRaySampler(self.ray_batch_size, self.z_near, self.z_far)
+        elif self.sample_mode == "mixed":
+            self.train_sampler = MixedRaySampler(self.ray_batch_size, self.z_near, self.z_far, self.patch_size, channels=self.train_image_processor.channels)
         else:
             raise NotImplementedError
 
@@ -90,9 +92,9 @@ class BTSWrapper(nn.Module):
     def forward(self, data):
         data = dict(data)
         merged_scan = torch.Tensor(data["merged_scan"])              # n, 1, number of points in pcd
-        images = torch.stack(data["imgs"], dim=1)                           # n, v, c, h, w
-        poses = torch.stack(data["poses"], dim=1)                           # n, v, 4, 4 w2c
-        projs = torch.stack(data["projs"], dim=1)                           # n, v, 4, 4 (-1, 1)
+        images = torch.stack(data["imgs"], dim=1) # torch.unsqueeze(torch.Tensor(data["imgs"]), dim=0)                           # n, v, c, h, w
+        poses = torch.stack(data["poses"], dim=1) # torch.unsqueeze(torch.Tensor(data["poses"]), dim=0)                          # n, v, 4, 4 w2c
+        projs = torch.stack(data["projs"], dim=1) # torch.unsqueeze(torch.Tensor(data["projs"]), dim=0)                          # n, v, 4, 4 (-1, 1)
 
         n, v, c, h, w = images.shape
         device = images.device
@@ -431,6 +433,7 @@ def initialize(config: dict, logger=None):
 
     # criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
     criterion = DepthAwareLoss() ### Lidar Loss
+    # criterion = LidarColorMixedLoss(config)
 
     return model, optimizer, criterion, lr_scheduler
 
@@ -466,6 +469,33 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     # Aggregate recon_imgs by taking the mean
     recon_imgs = recon_imgs.mean(dim=-2).permute(0, 3, 1, 2)
 
+    #Construct projection
+    projections_images = deepcopy(images)
+    try:
+        points = data["merged_scan"].detach()[0][:, :4]
+        points[:, 3] = 1.0
+        normalized_points = torch.matmul(data["projs"][0].detach()[0], torch.matmul(torch.inverse(data["poses"][0].detach()[0]), points.T)[:3, :]).T
+        normalized_points[:, :2] = normalized_points[:, :2] / normalized_points[:, 2][..., None]
+        direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3] # data["merged_scan"].detach()[0][:, 3:6]
+        # true_direction_vecs = data["merged_scan"].detach()[0][:, :3] - data["poses"][0].detach()[0][:3, 3]
+        depth = torch.norm(direction_vecs, dim=1)
+        depth = (depth - torch.min(depth)) / (torch.max(depth) - torch.min(depth))
+        invalid = 0
+        from matplotlib import cm
+        viridis = cm.get_cmap('inferno', 255)
+        for point, dv in zip(normalized_points, depth): 
+            dv = dv.cpu().numpy()
+            bgr_color = torch.Tensor(viridis(dv)[:3])
+            width = int((point[0] *.5 + 0.5) * projections_images[0].shape[2])
+            height = int((point[1] *.5 + 0.5) * projections_images[0].shape[1])
+            if 0 <= width < projections_images[0].shape[2] and 0 <= height < projections_images[0].shape[1]:
+                projections_images[0][:, height, width] = bgr_color
+            else:
+                invalid += 1
+        print("Invalid projections: ", invalid)
+    except:
+        pass
+
     recon_mse = (((images - recon_imgs) ** 2) / 2).mean(dim=1).clamp(0, 1)
     recon_mse = color_tensor(recon_mse, cmap="plasma").permute(0, 3, 1, 2)
 
@@ -495,6 +525,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     nrow = int(take_n ** .5)
 
     images_grid = make_grid(images, nrow=nrow)
+    projections_grid = make_grid(projections_images, nrow=nrow)
     recon_imgs_grid = make_grid(recon_imgs, nrow=nrow)
     recon_depths_grid = [make_grid(d, nrow=nrow) for d in recon_depths]
     depth_profile_grid = make_grid(depth_profile, nrow=nrow)
@@ -504,6 +535,7 @@ def visualize(engine: Engine, logger: TensorboardLogger, step: int, tag: str):
     invalids_grid = make_grid(invalids, nrow=nrow)
 
     writer.add_image(f"{tag}/input_im", images_grid.cpu(), global_step=step)
+    writer.add_image(f"{tag}/projections", projections_grid.cpu(), global_step=step)
     writer.add_image(f"{tag}/recon_im", recon_imgs_grid.cpu(), global_step=step)
     for i, d in enumerate(recon_depths_grid):
         writer.add_image(f"{tag}/recon_depth_{i}", d.cpu(), global_step=step)

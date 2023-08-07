@@ -164,7 +164,7 @@ def make_datasets(config):
     elif type == "KITTI_semantic":
         train_dataset = KittiSemanticDataset(
             data_path = config["data_path"],
-            train = True,
+            train = "train",
             target_image_size=tuple(config.get("image_size", (192, 640))),
             # data_path=config["data_path"],
             # pose_path=config["pose_path"],
@@ -184,7 +184,7 @@ def make_datasets(config):
         )
         test_dataset = KittiSemanticDataset(
             data_path=config["data_path"],
-            train = True,
+            train = "test",
             target_image_size=tuple(config.get("image_size", (192, 640))),
             # pose_path=config["pose_path"],
             # split_path=test_split_path,

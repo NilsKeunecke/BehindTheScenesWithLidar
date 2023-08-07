@@ -12,6 +12,26 @@ class RaySampler:
         raise NotImplementedError
 
 
+class MixedRaySampler(RaySampler):
+    def __init__(self, ray_batch_size, z_near, z_far, patch_size, channels) -> None:
+        weighting_factor = 0.5
+        self.lidar_sampler = LidarRaySampler(ray_batch_size * weighting_factor, z_near, z_far)
+        self.patch_sampler = PatchRaySampler(ray_batch_size * (1 - weighting_factor), z_near, z_far, patch_size, channels)
+
+    def sample(self, merged_scan, images, poses, projs):
+        lidar_rays, lidar_rays_gt = self.lidar_sampler(merged_scan)
+        patch_rays, patch_rays_gt = self.patch_sampler(images, poses, projs)
+
+        combined_rays = torch.cat([lidar_rays, patch_rays])
+        combined_rays_gt = torch.cat([lidar_rays_gt, patch_rays_gt])
+
+        return combined_rays, combined_rays_gt
+    
+    def reconstruct(self, render_dict):
+        return render_dict # Probably needs to be reworked
+        
+
+
 class LidarRaySampler(RaySampler):
     def __init__(self, ray_batch_size, z_near, z_far):
         self.ray_batch_size = ray_batch_size
@@ -33,7 +53,7 @@ class LidarRaySampler(RaySampler):
             depth = torch.norm(direction_vecs, dim=1)
             direction_vecs = torch.divide(direction_vecs.T, depth).T
             cam_fars = torch.zeros(self.ray_batch_size, device=device)
-            cam_fars[:] = depth + 3
+            cam_fars[:] = depth + 20
             depth_gt.append(depth)
             rays.append(torch.cat((points[:, 3:6], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
 

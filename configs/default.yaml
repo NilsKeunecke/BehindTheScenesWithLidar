@@ -3,13 +3,13 @@ model: "default"
 seed: 0
 output_path: "out/default"
 
-batch_size: 2
+batch_size: 16
 num_workers: 4
 
 eval_use_iters: true
 vis_use_iters: true
 validate_every: 2000
-visualize_every: 500
+visualize_every: 5
 
 log_every_iters: 1
 log_tb_train_every_iters: -1

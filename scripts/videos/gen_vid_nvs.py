@@ -28,8 +28,8 @@ def main():
     d_min = 3
     d_max = 40
 
-    task = "KITTI-360"
-    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K"]
+    task = "KITTI_Semantic"
+    assert task in ["KITTI-360", "KITTI-Raw", "RealEstate10K", "KITTI_Semantic"]
 
     cam_traj = "simple_movement.npy"
 
@@ -39,6 +39,8 @@ def main():
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittiraw("videos/nvs", "val")
     elif task == "RealEstate10K":
         dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_re10k("videos/nvs", "val")
+    elif task == "KITTI_Semantic":
+        dataset, config_path, cp_path, out_path, resolution, cam_incl_adjust = setup_kittisemantic("videos/nvs")
     else:
         raise ValueError(f"Invalid task: {task}")
 
