@@ -15,20 +15,21 @@ class RaySampler:
 class MixedRaySampler(RaySampler):
     def __init__(self, ray_batch_size, z_near, z_far, patch_size, channels) -> None:
         weighting_factor = 0.5
-        self.lidar_sampler = LidarRaySampler(ray_batch_size * weighting_factor, z_near, z_far)
-        self.patch_sampler = PatchRaySampler(ray_batch_size * (1 - weighting_factor), z_near, z_far, patch_size, channels)
-
+        self.ray_batch_size = ray_batch_size
+        self.channels = channels
+        self.lidar_sampler = LidarRaySampler(int(ray_batch_size * weighting_factor), z_near, z_far)
+        self.patch_sampler = PatchRaySampler(int(ray_batch_size * (1 - weighting_factor)), z_near, z_far, patch_size, channels)
     def sample(self, merged_scan, images, poses, projs):
-        lidar_rays, lidar_rays_gt = self.lidar_sampler(merged_scan)
-        patch_rays, patch_rays_gt = self.patch_sampler(images, poses, projs)
+        lidar_rays, lidar_rays_gt = self.lidar_sampler.sample(merged_scan) # (16, 1024, 8) & (16, 1024)
+        patch_rays, patch_rays_gt = self.patch_sampler.sample(images, poses, projs) # (16, 1024, 8) & (16, 1024, 3)
 
-        combined_rays = torch.cat([lidar_rays, patch_rays])
-        combined_rays_gt = torch.cat([lidar_rays_gt, patch_rays_gt])
+        combined_rays = torch.cat([lidar_rays, patch_rays], dim=1)
+        combined_rays_gt = [lidar_rays_gt, patch_rays_gt]
 
         return combined_rays, combined_rays_gt
     
     def reconstruct(self, render_dict):
-        return render_dict # Probably needs to be reworked
+        return self.patch_sampler.reconstruct(render_dict, self.channels, mixed_ray_sampler=True)
         
 
 
@@ -53,7 +54,7 @@ class LidarRaySampler(RaySampler):
             depth = torch.norm(direction_vecs, dim=1)
             direction_vecs = torch.divide(direction_vecs.T, depth).T
             cam_fars = torch.zeros(self.ray_batch_size, device=device)
-            cam_fars[:] = depth + 20
+            cam_fars[:] = depth + 10
             depth_gt.append(depth)
             rays.append(torch.cat((points[:, 3:6], direction_vecs, cam_nears[..., None], cam_fars[..., None]), dim=-1))
 
@@ -214,22 +215,27 @@ class PatchRaySampler(RaySampler):
 
         return all_rays, all_rgb_gt
 
-    def reconstruct(self, render_dict, channels=None):
+    def reconstruct(self, render_dict, channels=None, mixed_ray_sampler=False):
         coarse = render_dict["coarse"]
         fine = render_dict["fine"]
 
         if channels is None:
             channels = self.channels
 
-        c_rgb = coarse["rgb"]  # n, n_pts, v * 3
-        c_weights = coarse["weights"]
-        c_depth = coarse["depth"]
-        c_invalid = coarse["invalid"]
+        if mixed_ray_sampler:
+            cut_off = int(coarse["rgb"].shape[1] / 2)
+        else:
+            cut_off = 0
 
-        f_rgb = fine["rgb"]  # n, n_pts, v * 3
-        f_weights = fine["weights"]
-        f_depth = fine["depth"]
-        f_invalid = fine["invalid"]
+        c_rgb = coarse["rgb"][:, cut_off:, :]  # n, n_pts, v * 3
+        c_weights = coarse["weights"][:, cut_off:, :]
+        c_depth = coarse["depth"][:, cut_off:]
+        c_invalid = coarse["invalid"][:, cut_off:, :]
+
+        f_rgb = fine["rgb"][:, cut_off:, :]  # n, n_pts, v * 3
+        f_weights = fine["weights"][:, cut_off:, :]
+        f_depth = fine["depth"][:, cut_off:]
+        f_invalid = fine["invalid"][:, cut_off:, :]
 
         rgb_gt = render_dict["rgb_gt"]
 
@@ -250,26 +256,30 @@ class PatchRaySampler(RaySampler):
         fine["invalid"] = f_invalid.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, f_n_smps, v)
 
         if "alphas" in coarse:
-            c_alphas = coarse["alphas"]
-            f_alphas = fine["alphas"]
+            c_alphas = coarse["alphas"][:, cut_off:, :]
+            f_alphas = fine["alphas"][:, cut_off:, :]
             coarse["alphas"] = c_alphas.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, c_n_smps)
             fine["alphas"] = f_alphas.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, f_n_smps)
 
         if "z_samps" in coarse:
-            c_z_samps = coarse["z_samps"]
-            f_z_samps = fine["z_samps"]
+            c_z_samps = coarse["z_samps"][:, cut_off:, :]
+            f_z_samps = fine["z_samps"][:, cut_off:, :]
             coarse["z_samps"] = c_z_samps.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, c_n_smps)
             fine["z_samps"] = f_z_samps.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, f_n_smps)
 
         if "rgb_samps" in coarse:
-            c_rgb_samps = coarse["rgb_samps"]
-            f_rgb_samps = fine["rgb_samps"]
+            c_rgb_samps = coarse["rgb_samps"][:, cut_off:, :]
+            f_rgb_samps = fine["rgb_samps"][:, cut_off:, :]
             coarse["rgb_samps"] = c_rgb_samps.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, c_n_smps, v, channels)
             fine["rgb_samps"] = f_rgb_samps.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, f_n_smps, v, channels)
 
         render_dict["coarse"] = coarse
         render_dict["fine"] = fine
+
         render_dict["rgb_gt"] = rgb_gt.view(n, self._patch_count, self.patch_size_y, self.patch_size_x, self.channels)
+        if mixed_ray_sampler:
+            render_dict["coarse"]["depth_for_lidar"] = c_depth
+
 
         return render_dict
 

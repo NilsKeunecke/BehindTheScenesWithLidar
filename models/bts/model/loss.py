@@ -45,7 +45,7 @@ def edge_aware_smoothness(gt_img, depth, mask=None):
 class LidarColorMixedLoss():
     def __init__(self, config) -> None:
         self.lidar_loss = DepthAwareLoss()
-        self.reconstruction_loss = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
+        self.reconstruction_loss = ReconstructionLoss(config["color_loss"], config["model_conf"].get("use_automasking", False))
     
     @staticmethod
     def get_loss_metric_names():
@@ -56,9 +56,25 @@ class LidarColorMixedLoss():
         # data_recontruction = dict(list(data.items())[len(data)//2:])
         lidar_loss, lidar_dict = self.lidar_loss(data)
         recon_loss, recon_dict = self.reconstruction_loss(data)
-        combined_dict = [lidar_dict, recon_dict]
 
-        return lidar_loss + recon_loss, [lidar_dict, recon_dict]
+        combined_dict = {}
+        combined_dict["loss_rgb_coarse"] = recon_dict["loss_rgb_coarse"]
+        combined_dict["loss_rgb_fine"] = recon_dict["loss_rgb_fine"]
+        combined_dict["loss_ray_entropy"] = recon_dict["loss_ray_entropy"]
+        combined_dict["loss_depth_reg"] = lidar_dict["loss_depth_reg"] + recon_dict["loss_depth_reg"]
+        combined_dict["loss_alpha_reg"] = lidar_dict["loss_alpha_reg"] + recon_dict["loss_alpha_reg"]
+        combined_dict["loss_eas"] = recon_dict["loss_eas"]
+        combined_dict["loss_depth_smoothness"] = recon_dict["loss_depth_smoothness"]
+        combined_dict["loss_invalid_ratio"] = (lidar_dict["loss_invalid_ratio"] + recon_dict["loss_invalid_ratio"]) / 2
+        combined_dict["loss_invalid_ratio_rgb"] = lidar_dict["loss_invalid_ratio"]
+        combined_dict["loss_invalid_ratio_lidar"] = recon_dict["loss_invalid_ratio"]
+        combined_dict["computed_depth"] = lidar_dict["computed_depth"]
+        combined_dict["gt_depth"] = lidar_dict["gt_depth"]
+        combined_dict["loss"] = lidar_dict["loss"] + recon_dict["loss"]
+        combined_dict["loss_rgb"] = recon_dict["loss"]
+        combined_dict["loss_lidar"] = lidar_dict["loss"]
+
+        return lidar_loss + recon_loss, combined_dict
 
         
 
@@ -74,25 +90,23 @@ class DepthAwareLoss:
         with profiler.record_function("loss_computation"):
             loss_dict = {}
             
-            gt_depth = data["rgb_gt"]
-            computed_depth = data["coarse"][0]["depth"]
+            gt_depth = data["depth_gt"]
+            computed_depth = data["coarse"][0]["depth_for_lidar"][:, :gt_depth.shape[1]]
             item_loss = torch.abs(gt_depth-computed_depth)
             item_loss = torch.mean(item_loss)
             loss = item_loss
 
-            loss_dict["loss_rgb_coarse"] = -1
-            loss_dict["loss_rgb_fine"] = -1
-            loss_dict["loss_ray_entropy"] = -1
-            loss_dict["loss_depth_reg"] = -1
-            loss_dict["loss_alpha_reg"] = -1
-            loss_dict["loss_eas"] = -1
-            loss_dict["loss_depth_smoothness"] = -1
+            loss_dict["loss_rgb_coarse"] = 0
+            loss_dict["loss_rgb_fine"] = 0
+            loss_dict["loss_ray_entropy"] = 0
+            loss_dict["loss_depth_reg"] = 0
+            loss_dict["loss_alpha_reg"] = 0
+            loss_dict["loss_eas"] = 0
+            loss_dict["loss_depth_smoothness"] = 0
             loss_dict["loss_invalid_ratio"] = data["coarse"][0]["invalid"].float().mean().item()
             loss_dict["computed_depth"] = computed_depth
             loss_dict["gt_depth"] = gt_depth
             loss_dict["loss"] = loss.item()
-            # logging.info(f"loss: {round(loss.item(), 3)}, d_comp: {computed_depth[0:1000:5000]}, d_gt: {gt_depth[0:1000:5000]}")
-
             return loss, loss_dict
         
 class ReconstructionLoss:
@@ -141,14 +155,14 @@ class ReconstructionLoss:
 
             loss_dict = {}
 
-            loss_coarse_all = 0
-            loss_fine_all = 0
-            loss = 0
-
             coarse_0 = data["coarse"][0]
             fine_0 = data["fine"][0]
             invalid_coarse = coarse_0["invalid"]
             invalid_fine = fine_0["invalid"]
+
+            loss_coarse_all = torch.tensor(0.0, device=invalid_fine.device)
+            loss_fine_all = torch.tensor(0.0, device=invalid_fine.device)
+            loss = torch.tensor(0.0, device=invalid_fine.device)
 
             weights_coarse = coarse_0["weights"]
             weights_fine = fine_0["weights"]
@@ -163,8 +177,8 @@ class ReconstructionLoss:
                 invalid_fine = torch.all((invalid_fine.to(torch.float32) * weights_fine.unsqueeze(-1)).sum(-2) > .9, dim=-1, keepdim=True)
             elif self.invalid_policy == "weight_guided_diverse":
                 # We now also consider, whether there is enough variance in the ray colors to give a meaningful supervision signal.
-                rgb_samps_c = coarse_0["rgb_samps"]
-                rgb_samps_f = fine_0["rgb_samps"]
+                rgb_samps_c = coarse_0["rgb_samps"][:, :, :, :]
+                rgb_samps_f = fine_0["rgb_samps"][:, :, :, :]
                 ray_std_c = torch.std(rgb_samps_c, dim=-3).mean(-1)
                 ray_std_f = torch.std(rgb_samps_f, dim=-3).mean(-1)
 
@@ -187,9 +201,9 @@ class ReconstructionLoss:
                 coarse = data["coarse"][scale]
                 fine = data["fine"][scale]
 
-                rgb_coarse = coarse["rgb"]
-                rgb_fine = fine["rgb"]
-                rgb_gt = data["rgb_gt"]
+                rgb_coarse = coarse["rgb"][:, :, :]
+                rgb_fine = fine["rgb"][:, :, :]
+                rgb_gt = data["rgb_gt"][:, :, :]
 
                 if self.use_automasking:
                     thresh_gt = rgb_gt[..., -1:]
@@ -203,8 +217,6 @@ class ReconstructionLoss:
 
                 using_fine = len(fine) > 0
 
-                if len(rgb_coarse.shape) == 3:
-                    continue
                 b, pc, h, w, nv, c = rgb_coarse.shape
 
                 # Take minimum across all reconstructed views

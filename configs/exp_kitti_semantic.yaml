@@ -56,7 +56,7 @@ model_conf:
     n_frames_render: 2
     frame_sample_mode: default
 
-    sample_mode: lidar
+    sample_mode: mixed
     ray_batch_size: 2048
 
     flip_augmentation: true
@@ -65,7 +65,12 @@ model_conf:
     code_mode: z
 
 loss:
-    criterion: "depth_aware"
+    criterion: "depth_color"
+
+color_loss:
+    criterion: "l1+ssim"
+    invalid_policy: weight_guided
+    lambda_edge_aware_smoothness: 0.001
 
 scheduler:
     type: step

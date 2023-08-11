@@ -219,6 +219,8 @@ class BTSWrapper(nn.Module):
         with profiler.record_function("trainer_sample-rays"):
             if type(sampler) == LidarRaySampler:
                 all_rays, all_rgb_gt = sampler.sample(merged_scan)
+            elif type(sampler) == MixedRaySampler:
+                all_rays, all_rgb_gt = sampler.sample(merged_scan, images_ip, poses, projs)
             else:
                 all_rays, all_rgb_gt = sampler.sample(images_ip[:, ids_loss] , poses[:, ids_loss], projs[:, ids_loss])
 
@@ -239,7 +241,13 @@ class BTSWrapper(nn.Module):
                 if "fine" not in render_dict:
                     render_dict["fine"] = dict(render_dict["coarse"])
 
-                render_dict["rgb_gt"] = all_rgb_gt
+                if type(sampler) == MixedRaySampler:
+                    render_dict["depth_gt"] = all_rgb_gt[0]
+                    render_dict["rgb_gt"] = all_rgb_gt[1]
+                elif type(sampler) == LidarRaySampler:
+                    render_dict["depth_gt"] = all_rgb_gt
+                else:
+                    render_dict["rgb_gt"] = all_rgb_gt
                 render_dict["rays"] = all_rays
 
                 render_dict = sampler.reconstruct(render_dict)
@@ -247,6 +255,8 @@ class BTSWrapper(nn.Module):
                 data["fine"].append(render_dict["fine"])
                 data["coarse"].append(render_dict["coarse"])
                 data["rgb_gt"] = render_dict["rgb_gt"]
+                if (type(sampler) == MixedRaySampler) or (type(sampler) == LidarRaySampler):
+                    data["depth_gt"] = render_dict["depth_gt"]
                 data["rays"] = render_dict["rays"]
         else:
             with profiler.record_function("trainer_render"):
@@ -255,7 +265,13 @@ class BTSWrapper(nn.Module):
             if "fine" not in render_dict:
                 render_dict["fine"] = dict(render_dict["coarse"])
 
-            render_dict["rgb_gt"] = all_rgb_gt
+            if type(sampler) == MixedRaySampler:
+                render_dict["depth_gt"] = all_rgb_gt[0]
+                render_dict["rgb_gt"] = all_rgb_gt[1]
+            elif type(sampler) == LidarRaySampler:
+                render_dict["depth_gt"] = all_rgb_gt
+            else:
+                render_dict["rgb_gt"] = all_rgb_gt
             render_dict["rays"] = all_rays
 
             with profiler.record_function("trainer_reconstruct"):
@@ -264,6 +280,8 @@ class BTSWrapper(nn.Module):
             data["fine"].append(render_dict["fine"])
             data["coarse"].append(render_dict["coarse"])
             data["rgb_gt"] = render_dict["rgb_gt"]
+            if (type(sampler) == MixedRaySampler) or (type(sampler) == LidarRaySampler):
+                data["depth_gt"] = render_dict["depth_gt"]
             data["rays"] = render_dict["rays"]
 
         data["z_near"] = torch.tensor(self.z_near, device=images.device)
@@ -432,8 +450,8 @@ def initialize(config: dict, logger=None):
     lr_scheduler = make_scheduler(config.get("scheduler", {}), optimizer)
 
     # criterion = ReconstructionLoss(config["loss"], config["model_conf"].get("use_automasking", False))
-    criterion = DepthAwareLoss() ### Lidar Loss
-    # criterion = LidarColorMixedLoss(config)
+    # criterion = DepthAwareLoss() ### Lidar Loss
+    criterion = LidarColorMixedLoss(config)
 
     return model, optimizer, criterion, lr_scheduler
 
